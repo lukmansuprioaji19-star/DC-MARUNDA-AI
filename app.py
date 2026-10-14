@@ -1,15 +1,16 @@
 import streamlit as st
 import pandas as pd
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 # 1. Konfigurasi Halaman Web
 st.set_page_config(page_title="Bot Informasi DC Marunda", page_icon="🤖")
 st.title("🤖 Bot Informasi DC Marunda")
 
-# 2. Ambil API Key dari Secrets
+# 2. Ambil API Key dari Secrets Streamlit
 API_KEY = st.secrets.get("GEMINI_API_KEY")
 
-# 3. ID GOOGLE SHEETS
+# 3. ID GOOGLE SHEETS UTAMA
 SHEET_ID = "1e6eazfxdEfNXgupSIZNm7747Am4v2fU-b8VmfEp0gDs"
 
 @st.cache_data(ttl=60)
@@ -37,7 +38,7 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# 5. Input User & Respon AI
+# 5. Eksekusi Jawaban AI
 user_query = st.chat_input("Tanyakan soal Identitas, Insentif, KPI, Pencapaian, atau T-Code SAP...")
 
 if user_query:
@@ -67,10 +68,14 @@ if user_query:
 
         with st.spinner("Mencari data..."):
             try:
-                genai.configure(api_key=API_KEY)
-                # Kunci langsung ke model resmi wajib Google
-                model = genai.GenerativeModel("gemini-3.8-flash")
-                response = model.generate_content(prompt)
+                # Inisialisasi SDK Baru Google
+                client = genai.Client(api_key=API_KEY)
+                
+                # Menggunakan model standar gemini-2.5-flash
+                response = client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=prompt
+                )
                 
                 bot_reply = response.text
                 with st.chat_message("assistant"):
@@ -78,7 +83,4 @@ if user_query:
                 st.session_state.messages.append({"role": "assistant", "content": bot_reply})
                 
             except Exception as e:
-                if "429" in str(e):
-                    st.warning("⏳ Pertanyaan terlalu cepat/banyak dalam 1 menit. Tunggu 20-30 detik lalu coba tanya lagi ya!")
-                else:
-                    st.error(f"Error Detail: {e}")
+                st.error(f"Koneksi Terputus / Error: {e}")
