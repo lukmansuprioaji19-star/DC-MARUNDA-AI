@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 from google import genai
-import time
 
 # 1. Konfigurasi Halaman Web
 st.set_page_config(page_title="Bot Informasi DC Marunda", page_icon="🤖")
@@ -49,7 +48,6 @@ for message in st.session_state.messages:
 # 5. Eksekusi Jawaban AI
 if context_data and API_KEY:
     try:
-        # Inisialisasi Client Baru SDK Google GenAI
         client = genai.Client(api_key=API_KEY)
 
         user_query = st.chat_input("Tanyakan soal Identitas, Insentif, KPI, Pencapaian, atau T-Code SAP...")
@@ -77,23 +75,28 @@ if context_data and API_KEY:
             """
 
             with st.spinner("Mencari data..."):
-                try:
-                    # Pemanggilan model gemini-1.5-flash paling stabil & cepat
-                    response = client.models.generate_content(
-                        model="gemini-1.5-flash",
-                        contents=prompt,
-                    )
-                    bot_reply = response.text
-                    
+                bot_reply = None
+                # Daftar model paling stabil
+                models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash"]
+                
+                for m_name in models_to_try:
+                    try:
+                        response = client.models.generate_content(
+                            model=m_name,
+                            contents=prompt,
+                        )
+                        if response and response.text:
+                            bot_reply = response.text
+                            break
+                    except Exception:
+                        continue
+
+                if bot_reply:
                     with st.chat_message("assistant"):
                         st.markdown(bot_reply)
                     st.session_state.messages.append({"role": "assistant", "content": bot_reply})
-                    
-                except Exception as err:
-                    if "429" in str(err):
-                        st.warning("⏳ Pertanyaan terlalu cepat dalam 1 menit. Tunggu 15-20 detik lalu coba lagi ya!")
-                    else:
-                        st.error(f"Terjadi kesalahan: {err}")
+                else:
+                    st.warning("⏳ Server sedang padat. Silakan tunggu beberapa detik lalu coba kirim pertanyaan lagi!")
 
     except Exception as e:
         st.error(f"Terjadi kendala pada koneksi AI: {e}")
