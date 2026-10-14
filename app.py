@@ -8,7 +8,7 @@ import time
 st.set_page_config(page_title="Bot Informasi DC Marunda", page_icon="🤖")
 st.title("🤖 Bot Informasi DC Marunda")
 
-# 2. Ambil Daftar API Key
+# 2. Ambil Daftar API Key (Bisa Single atau Multiple dipisah koma)
 RAW_KEYS = st.secrets.get("GEMINI_API_KEYS", st.secrets.get("GEMINI_API_KEY", ""))
 API_KEYS = [k.strip() for k in RAW_KEYS.split(",") if k.strip()]
 
@@ -40,7 +40,7 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# 5. Eksekusi Pertanyaan (Model Aktif: gemini-2.5-flash)
+# 5. Eksekusi Pertanyaan (Model Resmi Aktif: gemini-3.8-flash)
 user_query = st.chat_input("Tanyakan jadwal, nama karyawan, atau informasi DC Marunda...")
 
 if user_query:
@@ -67,19 +67,25 @@ if user_query:
             bot_reply = None
             last_error = ""
 
+            # Acak urutan API Key agar beban terbagi adil
             shuffled_keys = API_KEYS.copy()
             random.shuffle(shuffled_keys)
 
             for current_key in shuffled_keys:
                 try:
                     genai.configure(api_key=current_key)
-                    model = genai.GenerativeModel("gemini-2.5-flash")
+                    
+                    # Wajib menggunakan nama model resmi aktif
+                    model = genai.GenerativeModel("gemini-3.8-flash")
+                    
                     response = model.generate_content(prompt)
                     if response and response.text:
                         bot_reply = response.text
-                        break
+                        break  # Sukses dapat jawaban, hentikan pencarian!
+                        
                 except Exception as e:
                     last_error = str(e)
+                    # Jika kena Limit (429) atau Server Sibuk (503), lompati dan coba Key berikutnya di Project lain!
                     continue
 
             if bot_reply:
@@ -87,4 +93,4 @@ if user_query:
                     st.markdown(bot_reply)
                 st.session_state.messages.append({"role": "assistant", "content": bot_reply})
             else:
-                st.error(f"Gagal memproses pesan: {last_error}")
+                st.error(f"Gagal memproses pesan. Semua API key sedang penuh/limit. Detail: {last_error}")
