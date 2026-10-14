@@ -38,7 +38,7 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# 5. Eksekusi Pertanyaan & Jawaban AI (Dengan Auto-Retry Anti 503)
+# 5. Eksekusi Pertanyaan & Jawaban AI
 user_query = st.chat_input("Tanyakan jadwal, nama karyawan, atau informasi DC Marunda...")
 
 if user_query:
@@ -63,10 +63,11 @@ if user_query:
 
         with st.spinner("Mencari data..."):
             genai.configure(api_key=API_KEY)
-            model = genai.GenerativeModel("gemini-1.5-flash")
+            # Menggunakan model aktif gemini-2.0-flash
+            model = genai.GenerativeModel("gemini-2.0-flash")
             
             bot_reply = None
-            max_retries = 3  # Mencoba maksimal 3 kali jika server Google sibuk (503)
+            max_retries = 3
             
             for attempt in range(max_retries):
                 try:
@@ -75,7 +76,6 @@ if user_query:
                         bot_reply = response.text
                         break
                 except Exception as e:
-                    # Jika kena 503 (Server Sibuk), tunggu 2 detik lalu coba lagi
                     if "503" in str(e) or "UNAVAILABLE" in str(e):
                         time.sleep(2)
                         continue
