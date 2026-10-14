@@ -9,7 +9,6 @@ st.title("🤖 Bot Informasi DC Marunda")
 
 # 2. Ambil Daftar API Key dari Secrets Streamlit
 RAW_KEYS = st.secrets.get("GEMINI_API_KEYS", st.secrets.get("GEMINI_API_KEY", ""))
-# Ubah string koma menjadi list
 API_KEYS = [k.strip() for k in RAW_KEYS.split(",") if k.strip()]
 
 # 3. ID GOOGLE SHEETS UTAMA
@@ -72,23 +71,39 @@ if user_query:
             bot_reply = None
             last_error = ""
             
-            # Acak urutan key biar beban terbagi adil
+            # Acak urutan API Key
             shuffled_keys = API_KEYS.copy()
             random.shuffle(shuffled_keys)
 
-            # ROTATION SYSTEM: Coba setiap API Key satu per satu
+            # Daftar model yang akan dicoba jika salah satu sibuk/down
+            models_to_try = [
+                "gemini-2.5-flash",
+                "gemini-2.0-flash",
+                "gemini-1.5-flash",
+                "gemini-3.8-flash"
+            ]
+
+            # DOUBLE ROTATION: Putar API Key & Putar Model
             for current_key in shuffled_keys:
                 try:
                     client = genai.Client(api_key=current_key)
-                    response = client.models.generate_content(
-                        model="gemini-3.8-flash",
-                        contents=prompt
-                    )
-                    if response and response.text:
-                        bot_reply = response.text
-                        break
-                except Exception as err:
-                    last_error = str(err)
+                    for model_name in models_to_try:
+                        try:
+                            response = client.models.generate_content(
+                                model=model_name,
+                                contents=prompt
+                            )
+                            if response and response.text:
+                                bot_reply = response.text
+                                break
+                        except Exception as m_err:
+                            last_error = str(m_err)
+                            continue
+                    
+                    if bot_reply:
+                        break # Jika berhasil dapat jawaban, stop putar key
+                except Exception as k_err:
+                    last_error = str(k_err)
                     continue
 
             if bot_reply:
@@ -96,4 +111,4 @@ if user_query:
                     st.markdown(bot_reply)
                 st.session_state.messages.append({"role": "assistant", "content": bot_reply})
             else:
-                st.error(f"Gagal memproses pesan: {last_error}")
+                st.error(f"Gagal memproses pesan (Server Google Sibuk): {last_error}")
