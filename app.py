@@ -15,7 +15,6 @@ SHEET_ID = "1e6eazfxdEfNXgupSIZNm7747Am4v2fU-b8VmfEp0gDs"
 
 @st.cache_data(ttl=60)
 def load_all_sheets(sheet_id):
-    # 5 Tab Sheet Sesuai Permintaan
     tab_names = [
         "Identitas", 
         "Insentif", 
@@ -51,7 +50,6 @@ for message in st.session_state.messages:
 if context_data and API_KEY:
     try:
         genai.configure(api_key=API_KEY)
-        # Menggunakan model gemini-3.8-flash sesuai instruksi API Google
         model = genai.GenerativeModel("gemini-3.8-flash")
 
         user_query = st.chat_input("Tanyakan soal Identitas, Insentif, KPI, Pencapaian, atau T-Code SAP...")
@@ -79,22 +77,19 @@ if context_data and API_KEY:
             """
 
             with st.spinner("Mencari data..."):
-                response_text = None
-                for attempt in range(3):
-                    try:
-                        response = model.generate_content(prompt)
-                        response_text = response.text
-                        break
-                    except Exception as err:
-                        if "429" in str(err) and attempt < 2:
-                            time.sleep(5)
-                        else:
-                            raise err
-
-                if response_text:
+                try:
+                    response = model.generate_content(prompt)
+                    bot_reply = response.text
+                    
                     with st.chat_message("assistant"):
-                        st.markdown(response_text)
-                    st.session_state.messages.append({"role": "assistant", "content": response_text})
+                        st.markdown(bot_reply)
+                    st.session_state.messages.append({"role": "assistant", "content": bot_reply})
+                    
+                except Exception as err:
+                    if "429" in str(err):
+                        st.warning("⏳ Server lagi agak padat nih (terlalu banyak pertanyaan dalam 1 menit). Tunggu sekitar 20-30 detik terus coba tanya lagi ya!")
+                    else:
+                        st.error(f"Terjadi kesalahan: {err}")
 
     except Exception as e:
         st.error(f"Terjadi kendala pada koneksi AI: {e}")
