@@ -57,10 +57,10 @@ if user_query:
 
         with st.spinner("Mencari data..."):
             try:
-                # Menggunakan SDK resmi google-genai (Suport API Key AQ.)
                 client = genai.Client(api_key=API_KEY)
+                # Kunci langsung ke gemini-3.8-flash sesuai instruksi resmi Google
                 response = client.models.generate_content(
-                    model="gemini-2.5-flash",
+                    model="gemini-3.8-flash",
                     contents=prompt
                 )
                 
