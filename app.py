@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import google.generativeai as genai
+import time
 
 # 1. Konfigurasi Halaman Web
 st.set_page_config(page_title="Bot Informasi DC Marunda", page_icon="🤖")
@@ -50,7 +51,8 @@ for message in st.session_state.messages:
 if context_data and API_KEY:
     try:
         genai.configure(api_key=API_KEY)
-        model = genai.GenerativeModel("gemini-2.5-flash")
+        # Menggunakan model gemini-3.8-flash sesuai instruksi API Google
+        model = genai.GenerativeModel("gemini-3.8-flash")
 
         user_query = st.chat_input("Tanyakan soal Identitas, Insentif, KPI, Pencapaian, atau T-Code SAP...")
 
@@ -77,12 +79,22 @@ if context_data and API_KEY:
             """
 
             with st.spinner("Mencari data..."):
-                response = model.generate_content(prompt)
-                bot_reply = response.text
+                response_text = None
+                for attempt in range(3):
+                    try:
+                        response = model.generate_content(prompt)
+                        response_text = response.text
+                        break
+                    except Exception as err:
+                        if "429" in str(err) and attempt < 2:
+                            time.sleep(5)
+                        else:
+                            raise err
 
-                with st.chat_message("assistant"):
-                    st.markdown(bot_reply)
-                st.session_state.messages.append({"role": "assistant", "content": bot_reply})
+                if response_text:
+                    with st.chat_message("assistant"):
+                        st.markdown(response_text)
+                    st.session_state.messages.append({"role": "assistant", "content": response_text})
 
     except Exception as e:
         st.error(f"Terjadi kendala pada koneksi AI: {e}")
