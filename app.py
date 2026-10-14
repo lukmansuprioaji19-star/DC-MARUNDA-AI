@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import google.generativeai as genai
+from google import genai
 import time
 
 # 1. Konfigurasi Halaman Web
@@ -49,8 +49,8 @@ for message in st.session_state.messages:
 # 5. Eksekusi Jawaban AI
 if context_data and API_KEY:
     try:
-        genai.configure(api_key=API_KEY)
-        model = genai.GenerativeModel("gemini-3.8-flash")
+        # Inisialisasi Client Baru SDK Google GenAI
+        client = genai.Client(api_key=API_KEY)
 
         user_query = st.chat_input("Tanyakan soal Identitas, Insentif, KPI, Pencapaian, atau T-Code SAP...")
 
@@ -78,7 +78,11 @@ if context_data and API_KEY:
 
             with st.spinner("Mencari data..."):
                 try:
-                    response = model.generate_content(prompt)
+                    # Pemanggilan model gemini-1.5-flash paling stabil & cepat
+                    response = client.models.generate_content(
+                        model="gemini-1.5-flash",
+                        contents=prompt,
+                    )
                     bot_reply = response.text
                     
                     with st.chat_message("assistant"):
@@ -87,7 +91,7 @@ if context_data and API_KEY:
                     
                 except Exception as err:
                     if "429" in str(err):
-                        st.warning("⏳ Server lagi agak padat nih (terlalu banyak pertanyaan dalam 1 menit). Tunggu sekitar 20-30 detik terus coba tanya lagi ya!")
+                        st.warning("⏳ Pertanyaan terlalu cepat dalam 1 menit. Tunggu 15-20 detik lalu coba lagi ya!")
                     else:
                         st.error(f"Terjadi kesalahan: {err}")
 
