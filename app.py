@@ -63,8 +63,9 @@ if user_query:
 
         with st.spinner("Mencari data..."):
             genai.configure(api_key=API_KEY)
-            # Menggunakan model aktif gemini-2.0-flash
-            model = genai.GenerativeModel("gemini-2.0-flash")
+            
+            # Wajib menggunakan nama model resmi aktif: gemini-3.8-flash
+            model = genai.GenerativeModel("gemini-3.8-flash")
             
             bot_reply = None
             max_retries = 3
@@ -76,6 +77,7 @@ if user_query:
                         bot_reply = response.text
                         break
                 except Exception as e:
+                    # Menangani error 503 jika server Google padat
                     if "503" in str(e) or "UNAVAILABLE" in str(e):
                         time.sleep(2)
                         continue
