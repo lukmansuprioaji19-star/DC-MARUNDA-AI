@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import google.generativeai as genai
+from google import genai
 
 # 1. Konfigurasi Halaman Web
 st.set_page_config(page_title="Bot Informasi DC Marunda", page_icon="🤖")
@@ -32,7 +32,7 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# 5. Eksekusi Pertanyaan & Jawaban AI (Logika Versi Awal)
+# 5. Eksekusi Pertanyaan & Jawaban AI
 user_query = st.chat_input("Tanyakan jadwal, nama karyawan, atau informasi DC Marunda...")
 
 if user_query:
@@ -57,11 +57,12 @@ if user_query:
 
         with st.spinner("Mencari data..."):
             try:
-                # Menggunakan library standar persis seperti versi awal kamu
-                genai.configure(api_key=API_KEY)
-                model = genai.GenerativeModel("gemini-1.5-flash")
-                
-                response = model.generate_content(prompt)
+                # Menggunakan SDK resmi google-genai (Suport API Key AQ.)
+                client = genai.Client(api_key=API_KEY)
+                response = client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=prompt
+                )
                 
                 bot_reply = response.text
                 with st.chat_message("assistant"):
