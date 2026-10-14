@@ -1,15 +1,18 @@
 import streamlit as st
 import pandas as pd
 import google.generativeai as genai
+import random
 
 # 1. Konfigurasi Halaman Web
 st.set_page_config(page_title="Bot Informasi DC Marunda", page_icon="🤖")
 st.title("🤖 Bot Informasi DC Marunda")
 
-# 2. Ambil API Key dari Secrets Streamlit
-API_KEY = st.secrets.get("GEMINI_API_KEY")
+# 2. Ambil & Pisahkan Kunci dari Secrets Streamlit
+RAW_KEYS = st.secrets.get("GEMINI_API_KEYS", st.secrets.get("GEMINI_API_KEY", ""))
+# Pisahkan string koma menjadi list kunci terpisah
+API_KEYS = [k.strip() for k in RAW_KEYS.split(",") if k.strip()]
 
-# 3. ID GOOGLE SHEET DC MARUNDA AI (5 TAB)
+# 3. ID GOOGLE SHEET BARU KAMU (5 TAB)
 SHEET_ID = "1pCLPIS2Gi55_hQPTAp8v753TeU6WWPbchAAKGPDg6wE"
 
 @st.cache_data(ttl=60)
@@ -41,7 +44,7 @@ for message in st.session_state.messages:
 user_query = st.chat_input("Tanyakan soal Identitas, Insentif, KPI, Pencapaian, atau T-Code SAP...")
 
 if user_query:
-    if not API_KEY:
+    if not API_KEYS:
         st.error("API Key belum diset di Secrets Streamlit!")
     else:
         st.session_state.messages.append({"role": "user", "content": user_query})
@@ -61,15 +64,28 @@ if user_query:
         """
 
         with st.spinner("Mencari data..."):
-            try:
-                genai.configure(api_key=API_KEY)
-                model = genai.GenerativeModel("gemini-1.5-flash")
-                response = model.generate_content(prompt)
-                
-                bot_reply = response.text
+            bot_reply = None
+            last_error = ""
+
+            # Acak urutan API Key
+            shuffled_keys = API_KEYS.copy()
+            random.shuffle(shuffled_keys)
+
+            for single_key in shuffled_keys:
+                try:
+                    genai.configure(api_key=single_key)
+                    model = genai.GenerativeModel("gemini-1.5-flash")
+                    response = model.generate_content(prompt)
+                    if response and response.text:
+                        bot_reply = response.text
+                        break
+                except Exception as e:
+                    last_error = str(e)
+                    continue
+
+            if bot_reply:
                 with st.chat_message("assistant"):
                     st.markdown(bot_reply)
                 st.session_state.messages.append({"role": "assistant", "content": bot_reply})
-                
-            except Exception as e:
-                st.error(f"Terjadi kesalahan: {e}")
+            else:
+                st.error(f"Terjadi kesalahan: {last_error}")
