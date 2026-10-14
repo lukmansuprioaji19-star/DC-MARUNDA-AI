@@ -68,7 +68,14 @@ if user_query:
         with st.spinner("Mencari data..."):
             try:
                 genai.configure(api_key=API_KEY)
-                model = genai.GenerativeModel("gemini-1.5-flash")
+                
+                # Cari otomatis model aktif yang support di akun kamu
+                available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                
+                # Utamakan model flash, kalau tidak ada pakai model pertama yang tersedia
+                target_model = next((m for m in available_models if 'flash' in m), available_models[0])
+                
+                model = genai.GenerativeModel(target_model)
                 response = model.generate_content(prompt)
                 
                 bot_reply = response.text
