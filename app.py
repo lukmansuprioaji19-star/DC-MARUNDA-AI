@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
-from google import genai
+import google.generativeai as genai
+import time
 
 # 1. Konfigurasi Halaman Web
 st.set_page_config(page_title="Bot Informasi DC Marunda", page_icon="🤖")
@@ -9,20 +10,25 @@ st.title("🤖 Bot Informasi DC Marunda")
 # 2. Ambil API Key dari Secrets Streamlit
 API_KEY = st.secrets.get("GEMINI_API_KEY")
 
-# 3. LINK GOOGLE SHEET CSV UTAMA KAMU
+# 3. ID GOOGLE SHEET DC MARUNDA AI (5 TAB)
 SHEET_ID = "1pCLPIS2Gi55_hQPTAp8v753TeU6WWPbchAAKGPDg6wE"
-CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
 
 @st.cache_data(ttl=60)
-def load_data(url):
-    try:
-        df = pd.read_csv(url)
-        return df.to_string(index=False)
-    except Exception as e:
-        st.error(f"Gagal membaca data dari Google Sheets: {e}")
-        return ""
+def load_all_sheets(sheet_id):
+    tab_names = ["INDENTITAS", "INSENTIF", "KPI", "PENCAPAIAN", "T-CODE"]
+    all_context = ""
+    for tab in tab_names:
+        url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={tab}"
+        try:
+            df = pd.read_csv(url)
+            if not df.empty:
+                all_context += f"\n\n--- TAB SHEET: {tab} ---\n"
+                all_context += df.to_string(index=False)
+        except Exception:
+            continue
+    return all_context
 
-context_data = load_data(CSV_URL)
+context_data = load_all_sheets(SHEET_ID)
 
 # 4. Chat History Simpel
 if "messages" not in st.session_state:
@@ -32,7 +38,7 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# 5. Eksekusi Pertanyaan & Jawaban AI
+# 5. Eksekusi Pertanyaan & Jawaban AI (Dengan Auto-Retry Anti 503)
 user_query = st.chat_input("Tanyakan jadwal, nama karyawan, atau informasi DC Marunda...")
 
 if user_query:
@@ -45,10 +51,10 @@ if user_query:
 
         prompt = f"""
         Kamu adalah asisten bot informasi DC Marunda. 
-        Jawab pertanyaan pengguna secara ramah, akurat, dan langsung berdasarkan data tabel berikut.
+        Jawab pertanyaan pengguna secara ramah, akurat, dan langsung berdasarkan data 5 tab tabel berikut.
         Jika nama atau informasi tidak ada dalam data, jawab dengan sopan bahwa data tidak ditemukan.
 
-        [DATA TABEL OPERASIONAL]:
+        [DATA TABEL OPERASIONAL DC MARUNDA]:
         {context_data}
 
         [PERTANYAAN PENGGUNA]:
@@ -56,18 +62,30 @@ if user_query:
         """
 
         with st.spinner("Mencari data..."):
-            try:
-                client = genai.Client(api_key=API_KEY)
-                # Kunci langsung ke gemini-3.8-flash sesuai instruksi resmi Google
-                response = client.models.generate_content(
-                    model="gemini-3.8-flash",
-                    contents=prompt
-                )
-                
-                bot_reply = response.text
+            genai.configure(api_key=API_KEY)
+            model = genai.GenerativeModel("gemini-1.5-flash")
+            
+            bot_reply = None
+            max_retries = 3  # Mencoba maksimal 3 kali jika server Google sibuk (503)
+            
+            for attempt in range(max_retries):
+                try:
+                    response = model.generate_content(prompt)
+                    if response and response.text:
+                        bot_reply = response.text
+                        break
+                except Exception as e:
+                    # Jika kena 503 (Server Sibuk), tunggu 2 detik lalu coba lagi
+                    if "503" in str(e) or "UNAVAILABLE" in str(e):
+                        time.sleep(2)
+                        continue
+                    else:
+                        st.error(f"Terjadi kesalahan: {e}")
+                        break
+
+            if bot_reply:
                 with st.chat_message("assistant"):
                     st.markdown(bot_reply)
                 st.session_state.messages.append({"role": "assistant", "content": bot_reply})
-
-            except Exception as e:
-                st.error(f"Terjadi kesalahan pada API Gemini: {e}")
+            elif not bot_reply and attempt == max_retries - 1:
+                st.warning("Server Google lagi padat banget, coba tekan tombol kirim sekali lagi ya!")
