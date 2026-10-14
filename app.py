@@ -68,14 +68,8 @@ if user_query:
         with st.spinner("Mencari data..."):
             try:
                 genai.configure(api_key=API_KEY)
-                
-                # Cari otomatis model aktif yang support di akun kamu
-                available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-                
-                # Utamakan model flash, kalau tidak ada pakai model pertama yang tersedia
-                target_model = next((m for m in available_models if 'flash' in m), available_models[0])
-                
-                model = genai.GenerativeModel(target_model)
+                # Kunci langsung ke model resmi wajib Google
+                model = genai.GenerativeModel("gemini-3.8-flash")
                 response = model.generate_content(prompt)
                 
                 bot_reply = response.text
@@ -84,4 +78,7 @@ if user_query:
                 st.session_state.messages.append({"role": "assistant", "content": bot_reply})
                 
             except Exception as e:
-                st.error(f"Error Detail: {e}")
+                if "429" in str(e):
+                    st.warning("⏳ Pertanyaan terlalu cepat/banyak dalam 1 menit. Tunggu 20-30 detik lalu coba tanya lagi ya!")
+                else:
+                    st.error(f"Error Detail: {e}")
