@@ -1,14 +1,16 @@
 import streamlit as st
 import pandas as pd
 import google.generativeai as genai
+import random
 import time
 
 # 1. Konfigurasi Halaman Web
 st.set_page_config(page_title="Bot Informasi DC Marunda", page_icon="🤖")
 st.title("🤖 Bot Informasi DC Marunda")
 
-# 2. Ambil API Key dari Secrets Streamlit
-API_KEY = st.secrets.get("GEMINI_API_KEY")
+# 2. Ambil Daftar API Key (Bisa Single atau Multiple dipisah koma)
+RAW_KEYS = st.secrets.get("GEMINI_API_KEYS", st.secrets.get("GEMINI_API_KEY", ""))
+API_KEYS = [k.strip() for k in RAW_KEYS.split(",") if k.strip()]
 
 # 3. ID GOOGLE SHEET DC MARUNDA AI (5 TAB)
 SHEET_ID = "1pCLPIS2Gi55_hQPTAp8v753TeU6WWPbchAAKGPDg6wE"
@@ -38,11 +40,11 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# 5. Eksekusi Pertanyaan & Jawaban AI
+# 5. Eksekusi Pertanyaan & Jawaban AI (Rotasi Key Kebal 429 & 503)
 user_query = st.chat_input("Tanyakan jadwal, nama karyawan, atau informasi DC Marunda...")
 
 if user_query:
-    if not API_KEY:
+    if not API_KEYS:
         st.error("API Key belum diset di Secrets Streamlit!")
     else:
         st.session_state.messages.append({"role": "user", "content": user_query})
@@ -62,32 +64,32 @@ if user_query:
         """
 
         with st.spinner("Mencari data..."):
-            genai.configure(api_key=API_KEY)
-            
-            # Wajib menggunakan nama model resmi aktif: gemini-3.8-flash
-            model = genai.GenerativeModel("gemini-3.8-flash")
-            
             bot_reply = None
-            max_retries = 3
-            
-            for attempt in range(max_retries):
+            last_error = ""
+
+            # Acak urutan API Key agar beban terbagi adil
+            shuffled_keys = API_KEYS.copy()
+            random.shuffle(shuffled_keys)
+
+            for current_key in shuffled_keys:
                 try:
+                    genai.configure(api_key=current_key)
+                    model = genai.GenerativeModel("gemini-3.8-flash")
+                    
+                    # Percobaan panggil
                     response = model.generate_content(prompt)
                     if response and response.text:
                         bot_reply = response.text
-                        break
+                        break  # Berhasil dapat jawaban!
+                        
                 except Exception as e:
-                    # Menangani error 503 jika server Google padat
-                    if "503" in str(e) or "UNAVAILABLE" in str(e):
-                        time.sleep(2)
-                        continue
-                    else:
-                        st.error(f"Terjadi kesalahan: {e}")
-                        break
+                    last_error = str(e)
+                    # Jika kena limit (429) atau server sibuk (503), ABAIKAN dan lanjut ke API Key berikutnya di loop!
+                    continue
 
             if bot_reply:
                 with st.chat_message("assistant"):
                     st.markdown(bot_reply)
                 st.session_state.messages.append({"role": "assistant", "content": bot_reply})
-            elif not bot_reply and attempt == max_retries - 1:
-                st.warning("Server Google lagi padat banget, coba tekan tombol kirim sekali lagi ya!")
+            else:
+                st.error(f"Gagal memproses pesan: {last_error}")
