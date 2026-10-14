@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from google import genai
-from google.genai import types
+import time
 
 # 1. Konfigurasi Halaman Web
 st.set_page_config(page_title="Bot Informasi DC Marunda", page_icon="🤖")
@@ -68,10 +68,9 @@ if user_query:
 
         with st.spinner("Mencari data..."):
             try:
-                # Inisialisasi SDK Baru Google
                 client = genai.Client(api_key=API_KEY)
                 
-                # Menggunakan model standar gemini-2.5-flash
+                # Menggunakan gemini-2.5-flash pada SDK google-genai
                 response = client.models.generate_content(
                     model="gemini-2.5-flash",
                     contents=prompt
@@ -83,4 +82,8 @@ if user_query:
                 st.session_state.messages.append({"role": "assistant", "content": bot_reply})
                 
             except Exception as e:
-                st.error(f"Koneksi Terputus / Error: {e}")
+                err_msg = str(e)
+                if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
+                    st.warning("⏳ Batas pertanyaan per menit terlampaui. Tunggu 20-30 detik lalu coba lagi ya!")
+                else:
+                    st.error(f"Koneksi Terputus / Error: {err_msg}")
