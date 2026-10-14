@@ -9,7 +9,7 @@ st.title("🤖 Bot Informasi DC Marunda")
 # 2. Ambil API Key dari Secrets Streamlit
 API_KEY = st.secrets.get("GEMINI_API_KEY")
 
-# 3. LINK / ID GOOGLE SHEET DC MARUNDA AI (5 TAB)
+# 3. ID GOOGLE SHEET DC MARUNDA AI (5 TAB)
 SHEET_ID = "1pCLPIS2Gi55_hQPTAp8v753TeU6WWPbchAAKGPDg6wE"
 
 @st.cache_data(ttl=60)
@@ -37,7 +37,7 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# 5. Input User & Respon AI (Kodingan Asli Lama)
+# 5. Input User & Respon AI
 user_query = st.chat_input("Tanyakan soal Identitas, Insentif, KPI, Pencapaian, atau T-Code SAP...")
 
 if user_query:
@@ -63,12 +63,7 @@ if user_query:
         with st.spinner("Mencari data..."):
             try:
                 genai.configure(api_key=API_KEY)
-                
-                # Menggunakan fungsi bawaan untuk mengambil model aktif tanpa paksa nama versi
-                available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-                chosen_model = available_models[0]
-                
-                model = genai.GenerativeModel(chosen_model)
+                model = genai.GenerativeModel("gemini-1.5-flash")
                 response = model.generate_content(prompt)
                 
                 bot_reply = response.text
