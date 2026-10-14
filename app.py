@@ -9,7 +9,7 @@ st.title("🤖 Bot Informasi DC Marunda")
 
 # 2. Ambil Daftar API Key dari Secrets Streamlit
 RAW_KEYS = st.secrets.get("GEMINI_API_KEYS", st.secrets.get("GEMINI_API_KEY", ""))
-# Ubah string koma menjadi daftar List
+# Ubah string koma menjadi list
 API_KEYS = [k.strip() for k in RAW_KEYS.split(",") if k.strip()]
 
 # 3. ID GOOGLE SHEETS UTAMA
@@ -72,7 +72,7 @@ if user_query:
             bot_reply = None
             last_error = ""
             
-            # ACAK URUTAN KEY biar beban terbagi adil
+            # Acak urutan key biar beban terbagi adil
             shuffled_keys = API_KEYS.copy()
             random.shuffle(shuffled_keys)
 
@@ -81,19 +81,19 @@ if user_query:
                 try:
                     client = genai.Client(api_key=current_key)
                     response = client.models.generate_content(
-                        model="gemini-2.5-flash",
+                        model="gemini-3.8-flash",
                         contents=prompt
                     )
                     if response and response.text:
                         bot_reply = response.text
-                        break  # Berhasil! Keluar dari loop rotation
+                        break
                 except Exception as err:
                     last_error = str(err)
-                    continue  # Gagal/Limit? Otomatis pindah ke Key berikutnya
+                    continue
 
             if bot_reply:
                 with st.chat_message("assistant"):
                     st.markdown(bot_reply)
                 st.session_state.messages.append({"role": "assistant", "content": bot_reply})
             else:
-                st.warning("⏳ Seluruh cadangan kuota gratisan lagi terpakai bersamaan. Tunggu sekitar 20-30 detik lalu tekan kirim lagi ya!")
+                st.error(f"Gagal memproses pesan: {last_error}")
