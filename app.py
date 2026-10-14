@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from google import genai
 import random
+import time
 
 # 1. Konfigurasi Halaman Web
 st.set_page_config(page_title="Bot Informasi DC Marunda", page_icon="🤖")
@@ -75,15 +76,15 @@ if user_query:
             shuffled_keys = API_KEYS.copy()
             random.shuffle(shuffled_keys)
 
-            # Daftar model yang akan dicoba jika salah satu sibuk/down
+            # Prioritaskan model paling stabil di awal
             models_to_try = [
-                "gemini-2.5-flash",
-                "gemini-2.0-flash",
                 "gemini-1.5-flash",
+                "gemini-2.0-flash",
+                "gemini-2.5-flash",
                 "gemini-3.8-flash"
             ]
 
-            # DOUBLE ROTATION: Putar API Key & Putar Model
+            # DOUBLE ROTATION DENGAN JEDA WAKTU
             for current_key in shuffled_keys:
                 try:
                     client = genai.Client(api_key=current_key)
@@ -98,10 +99,13 @@ if user_query:
                                 break
                         except Exception as m_err:
                             last_error = str(m_err)
+                            # Beri jeda 1.5 detik jika terkena 503 agar server Google rileks
+                            if "503" in last_error or "UNAVAILABLE" in last_error:
+                                time.sleep(1.5)
                             continue
                     
                     if bot_reply:
-                        break # Jika berhasil dapat jawaban, stop putar key
+                        break
                 except Exception as k_err:
                     last_error = str(k_err)
                     continue
@@ -111,4 +115,4 @@ if user_query:
                     st.markdown(bot_reply)
                 st.session_state.messages.append({"role": "assistant", "content": bot_reply})
             else:
-                st.error(f"Gagal memproses pesan (Server Google Sibuk): {last_error}")
+                st.error(f"Gagal memproses pesan: {last_error}")
