@@ -38,7 +38,6 @@ def get_smart_context(sheet_id, query):
     if any(k in q for k in ["tcode", "t-code", "code"]):
         tabs.append("T-CODE")
     
-    # Kalau sapaan biasa (hai/mas/tes), cuma muat tab INDENTITAS biar hemat token
     if not tabs:
         tabs = ["INDENTITAS"]
 
@@ -66,7 +65,6 @@ if user_query:
         with st.chat_message("user"):
             st.markdown(user_query)
 
-        # Muat data yang relevan saja agar sangat hemat token
         context_data = get_smart_context(SHEET_ID, user_query)
 
         system_prompt = f"""
@@ -97,9 +95,9 @@ if user_query:
             try:
                 client = Groq(api_key=GROQ_API_KEY)
                 
-                # Menggunakan model llama-3.1-8b-instant yang AKTIF di akun Groq kamu
+                # NAMA MODEL RESMI GROQ AKTIF: llama3-8b-8192
                 completion = client.chat.completions.create(
-                    model="llama-3.1-8b-instant",
+                    model="llama3-8b-8192",
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_query}
