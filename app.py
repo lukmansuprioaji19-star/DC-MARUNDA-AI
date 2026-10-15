@@ -20,7 +20,7 @@ def load_all_sheets(sheet_id):
         url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={tab}"
         try:
             df = pd.read_csv(url)
-            # Hapus baris & kolom yang kosong agar super hemat token
+            # Hapus baris & kolom yang benar-benar kosong
             df = df.dropna(how="all").dropna(how="all", axis=1)
             if not df.empty:
                 all_context += f"\n--- TAB: {tab} ---\n"
@@ -52,17 +52,20 @@ if user_query:
 
         system_prompt = f"""
         Kamu adalah asisten bot informasi DC Marunda.
-        Tugasmu adalah menjawab pertanyaan pengguna dengan cepat, ramah, dan akurat berdasarkan data tabel yang diberikan.
+        Tugasmu adalah menjawab pertanyaan pengguna secara ramah, lengkap, dan akurat berdasarkan data tabel yang diberikan.
 
-        ATURAN JAWABAN:
-        1. Jawab pertanyaan pengguna secara langsung tanpa meminta kata kunci/rahasia apa pun.
-        2. Jika pengguna menanyakan data insentif/poin karyawan, tampilkan jawabannya secara menurun (list/bullet points) yang rapi, contoh:
+        ATURAN TAMPILAN JAWABAN INSENTIF:
+        1. Jika pengguna menanyakan data insentif/poin karyawan, tampilkan SELURUH rincian komponen poin yang ada di tabel secara menurun (list/bullet points) yang rapi, contoh:
            Informasi Insentif [Nama Karyawan] per [Tanggal]:
            - NIK: [NIK]
            - Job: [Job/Posisi]
-           - Total Poin: [Total Poin & Nominal]
+           - [Komponen Point 1 yang tersedia]: [Nilai]
+           - [Komponen Point 2 yang tersedia]: [Nilai]
+           - ...
+           - Total Poin: [Total Poin]
 
-        3. Jawab hanya berdasarkan data yang ada di tabel. Jika data tidak ditemukan, sampaikan secara sopan bahwa data tidak ditemukan.
+        2. Tampilkan semua detail kolom yang berkaitan dengan karyawan tersebut agar informasinya lengkap dan jelas.
+        3. Jawab hanya berdasarkan data yang ada di tabel. Jika data tidak ditemukan, sampaikan secara sopan.
 
         [DATA TABEL OPERASIONAL DC MARUNDA]:
         {context_data}
@@ -72,14 +75,13 @@ if user_query:
             try:
                 client = Groq(api_key=GROQ_API_KEY)
                 
-                # OTOMATIS AMBIL DAFTAR MODEL YANG BENAR-BENAR AKTIF DI AKUN KAMU
+                # Auto-detect model aktif di Groq
                 available_models = [m.id for m in client.models.list().data]
                 
                 bot_reply = None
                 last_err = ""
 
                 for model_name in available_models:
-                    # Filter hanya model Llama, Qwen, atau Mixtral
                     if any(brand in model_name.lower() for brand in ["llama", "qwen", "mixtral", "gemma"]):
                         try:
                             completion = client.chat.completions.create(
