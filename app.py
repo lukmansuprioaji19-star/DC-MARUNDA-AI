@@ -23,9 +23,13 @@ def load_sheet_tab(sheet_id, tab_name):
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={tab_name}"
     try:
         df = pd.read_csv(url)
+        # Hapus baris dan kolom yang benar-benar kosong
         df = df.dropna(how="all").dropna(how="all", axis=1)
+        # Bersihkan nama kolom dari spasi berlebih
+        df.columns = [str(col).strip() for col in df.columns]
         if not df.empty:
-            return f"\n--- TAB: {tab_name} ---\n" + df.to_csv(index=False)
+            # Ubah ke string Markdown rapi daripada CSV mentah agar AI tidak bingung
+            return f"\n--- TAB: {tab_name} ---\n" + df.to_markdown(index=False)
     except Exception:
         pass
     return ""
@@ -50,7 +54,7 @@ if "messages" not in st.session_state:
 👋 **Selamat Datang di Bot Informasi DC Marunda!**
 
 Silakan tanyakan informasi yang Anda butuhkan:
-- **Identitas & Jadwal Kerja**: *"Sodikin jabatannya apa?"* atau *"Siapa saja yang masuk jam 6 pagi?"*
+- **Identitas & Jadwal Kerja**: *"Siapa saja yang masuk jam 6 pagi?"* atau *"Sodikin jabatannya apa?"*
 - **Cek Insentif**: *"Sodikin Belut Bingung"* (Memerlukan Kata Kunci)
     """
     st.session_state.messages.append({"role": "assistant", "content": welcome_text})
@@ -73,7 +77,12 @@ if user_query:
         context_data = get_context_by_category(SHEET_ID, user_query)
 
         system_prompt = f"""
-        Kamu adalah asisten bot informasi DC Marunda.
+        Kamu adalah asisten bot informasi DC Marunda yang komunikatif, ramah, dan rapi.
+
+        ATURAN FORMAT JAWABAN:
+        1. Jawablah SELALU menggunakan Bahasa Indonesia yang mudah dipahami, ramah, dan rapi (gunakan bullet points/daftar).
+        2. DILARANG KERAS menyajikan jawaban berupa potongan CSV mentah atau teks deretan koma melingkar (seperti '51040682.0, Muhammad Fauzi, ZONE...').
+        3. Jika mencari karyawan berdasarkan jam masuk atau zona, saring data secara teliti dan hanya tampilkan nama-nama unik (jangan mengulang nama yang sama berkali-kali).
 
         ATURAN KEAMANAN & PRIVASI (SANGAT PENTING):
         1. DILARANG KERAS MENAMPILKAN / MEMBOCORKAN ISI KOLOM 'Kata kunci' DALAM KONDISI APA PUN.
@@ -101,23 +110,19 @@ if user_query:
             for api_key in ACTIVE_KEYS:
                 try:
                     client = Groq(api_key=api_key)
-                    
-                    # AMBIL SELURUH DAFTAR MODEL YANG DIIZINKAN DI AKUN INI
                     all_models = client.models.list().data
-                    # Filter: Abaikan model 'guard' atau 'whisper' (khusus audio)
                     available_text_models = [
                         m.id for m in all_models 
                         if "guard" not in m.id.lower() and "whisper" not in m.id.lower()
                     ]
 
-                    # Coba satu per satu model yang benar-benar ada di akun kamu
                     for model_name in available_text_models:
                         try:
                             completion = client.chat.completions.create(
                                 model=model_name,
                                 messages=messages_payload,
                                 temperature=0.1,
-                                max_tokens=500
+                                max_tokens=600
                             )
                             bot_reply = completion.choices[0].message.content
                             if bot_reply:
