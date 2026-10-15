@@ -20,7 +20,6 @@ def load_all_sheets(sheet_id):
         url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={tab}"
         try:
             df = pd.read_csv(url)
-            # Hapus baris & kolom kosong agar super hemat token
             df = df.dropna(how="all").dropna(how="all", axis=1)
             if not df.empty:
                 all_context += f"\n--- TAB: {tab} ---\n"
@@ -53,22 +52,20 @@ if user_query:
         system_prompt = f"""
         Kamu adalah asisten bot informasi DC Marunda.
 
-        ATURAN KEAMANAN & RAHASIA DATA INSENTIF (SANGAT PENTING):
-        1. Khusus untuk pertanyaan mengenai data INSENTIF / POIN karyawan:
-           - Kamu HARUS memeriksa apakah pengguna telah menyertakan kata kunci yang sesuai untuk nama karyawan tersebut (data terdapat pada kolom 'Kata kunci' di tab INSENTIF).
-           - Jika pengguna BELUM menyebutkan 'Kata kunci' atau kata kuncinya SALAH/TIDAK COCOK dengan nama karyawan yang ditanyakan:
-             Sampaikan dengan sopan bahwa data insentif bersifat rahasia dan minta pengguna menyebutkan kata kunci yang benar terlebih dahulu.
-           - Jika pengguna SUDAH menyebutkan 'Kata kunci' yang BENAR dan cocok dengan nama karyawannya:
-             Tampilkan rincian insentif dan poin secara lengkap.
+        ATURAN KEAMANAN & PRIVASI (SANGAT PENTING):
+        1. DILARANG KERAS MENAMPILKAN / MEMBOCORKAN ISI KOLOM 'Kata Kunci' (seperti Belut Bingung, Kucing Keriting, dll) DALAM KONDISI APA PUN, TERMASUK SAAT USER MENANYAKAN IDENTITAS KARYAWAN.
+        2. Khusus pertanyaan umum/identitas (NIK, Jabatan, Nama): Jawab langsung TANPA menyebutkan kata kunci rahasianya.
 
-        2. FORMAT TAMPILAN JAWABAN INSENTIF:
-           Tampilkan rincian data insentif secara menurun (list/bullet points) yang rapi, contoh:
-           Informasi Insentif [Nama Karyawan] per tanggal [Tanggal]:
-           - NIK: [NIK]
-           - Job: [Job/Posisi]
-           - Total Poin / Rincian: [Total Poin / Rincian dari tabel]
+        ATURAN VERIFIKASI DATA INSENTIF & POIN:
+        1. Data INSENTIF/POIN hanya boleh diberikan jika pengguna menyebutkan 'Kata kunci' yang cocok dengan karyawan tersebut.
+        2. Jika pengguna hanya mengetikkan Kata Kunci (contoh: "belut bingung") atau menanyakan insentif setelah chat sebelumnya:
+           - Periksa seluruh tabel untuk menemukan karyawan yang memiliki Kata Kunci tersebut.
+           - Jika Kata Kunci BENAR/COCOK dengan karyawan (misal: "Belut Bingung" milik Sodikin), LANGSUNG tampilkan seluruh rincian insentif dan poin karyawan tersebut secara lengkap dan rapi (menurun).
+        3. Jika Kata Kunci SALAH / BELUM DIBERIKAN:
+           - Sampaikan dengan sopan bahwa data insentif bersifat rahasia dan minta pengguna menyebutkan Kata Kunci yang benar.
 
-        3. Untuk pertanyaan umum di luar insentif (seperti NIK, Jabatan, KPI, Pencapaian, T-Code), kamu boleh menjawab langsung tanpa perlu kata kunci.
+        FORMAT JAWABAN INSENTIF:
+        Tampilkan rincian data insentif secara menurun (list/bullet points) yang rapi.
 
         [DATA TABEL OPERASIONAL DC MARUNDA]:
         {context_data}
@@ -78,22 +75,24 @@ if user_query:
             try:
                 client = Groq(api_key=GROQ_API_KEY)
                 
-                # Otomatis ambil daftar model aktif di akun Groq kamu
+                # Ambil daftar model aktif di Groq
                 available_models = [m.id for m in client.models.list().data]
                 
                 bot_reply = None
                 last_err = ""
+
+                # Buat percakapan memahami riwayat chat sebelumnya
+                messages_payload = [{"role": "system", "content": system_prompt}]
+                for msg in st.session_state.messages:
+                    messages_payload.append({"role": msg["role"], "content": msg["content"]})
 
                 for model_name in available_models:
                     if any(brand in model_name.lower() for brand in ["llama", "qwen", "mixtral", "gemma"]):
                         try:
                             completion = client.chat.completions.create(
                                 model=model_name,
-                                messages=[
-                                    {"role": "system", "content": system_prompt},
-                                    {"role": "user", "content": user_query}
-                                ],
-                                temperature=0.2
+                                messages=messages_payload,
+                                temperature=0.1
                             )
                             bot_reply = completion.choices[0].message.content
                             if bot_reply:
