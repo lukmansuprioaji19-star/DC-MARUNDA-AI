@@ -30,16 +30,21 @@ def load_sheet_tab(sheet_id, tab_name):
         pass
     return ""
 
-def get_context_by_category(sheet_id, category):
-    if category == "1":
+def get_context_by_category(sheet_id, query):
+    q = query.lower()
+    
+    # Cek apakah user mengetikkan angka 1-5 di awal pesan
+    first_char = query.strip()[0] if query.strip() else ""
+    
+    if first_char == "1" or any(k in q for k in ["identitas", "jadwal", "alamat", "nik", "nama", "jabatan"]):
         return load_sheet_tab(sheet_id, "INDENTITAS")
-    elif category == "2":
+    elif first_char == "2" or any(k in q for k in ["insentif", "poin", "point", "absen", "kata kunci"]):
         return load_sheet_tab(sheet_id, "INSENTIF")
-    elif category == "3":
+    elif first_char == "3" or any(k in q for k in ["kpi", "whu", "ofr"]):
         return load_sheet_tab(sheet_id, "KPI")
-    elif category == "4":
+    elif first_char == "4" or any(k in q for k in ["pencapaian", "box", "pcs", "lead time"]):
         return load_sheet_tab(sheet_id, "PENCAPAIAN")
-    elif category == "5":
+    elif first_char == "5" or any(k in q for k in ["tcode", "t-code", "code", "sap"]):
         return load_sheet_tab(sheet_id, "T-CODE")
     else:
         # Default jika pertanyaan umum
@@ -80,20 +85,14 @@ if user_query:
         with st.chat_message("user"):
             st.markdown(user_query)
 
-        # Cek apakah user memasukkan angka menu di awal (1/2/3/4/5)
-        selected_category = "1"
-        first_char = user_query.strip()[0]
-        if first_char in ["1", "2", "3", "4", "5"]:
-            selected_category = first_char
-
         # Muat HANYA 1 TAB SHEET sesuai kategori menu (Hemat Token 90%!)
-        context_data = get_context_by_category(SHEET_ID, selected_category)
+        context_data = get_context_by_category(SHEET_ID, user_query)
 
         system_prompt = f"""
         Kamu adalah asisten bot informasi DC Marunda.
 
         ATURAN KEAMANAN & PRIVASI (SANGAT PENTING):
-        1. DILARANG KERAS MENAMPILKAN / MEMBOCORKAN ISI KOLOM 'Kata kunci' (seperti Belut Bingung, Kucing Keriting, dll) DALAM KONDISI APA PUN, TERMASUK SAAT USER MENANYAKAN IDENTITAS KARYAWAN.
+        1. DILARANG KERAS MENAMPILKAN / MEMBOCORKAN ISI KOLOM 'Kata kunci' DALAM KONDISI APA PUN, TERMASUK SAAT USER MENANYAKAN IDENTITAS KARYAWAN.
         2. Khusus pertanyaan Menu 1 (Identitas, Jadwal, Alamat): Jawab langsung TANPA pernah menyebutkan kata kunci rahasianya.
 
         ATURAN VERIFIKASI DATA INSENTIF & POIN (MENU 2):
@@ -110,26 +109,38 @@ if user_query:
             bot_reply = None
             last_err = ""
 
-            # Rotasi 3 API Key secara bergantian jika ada key yang habis kuota
+            # Rotasi 3 API Key secara bergantian jika ada key yang habis kuota/error
             for api_key in ACTIVE_KEYS:
                 try:
                     client = Groq(api_key=api_key)
                     
-                    # Menggunakan model Llama 3.1 8B (Kencang & Kuota Raksasa)
-                    completion = client.chat.completions.create(
-                        model="llama-3.1-8b-instant",
-                        messages=[
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_query}
-                        ],
-                        temperature=0.1
-                    )
-                    bot_reply = completion.choices[0].message.content
+                    # OTOMATIS AMBIL DAFTAR MODEL YANG BENAR-BENAR AKTIF DI AKUN TERSEBUT
+                    available_models = [m.id for m in client.models.list().data]
+                    
+                    for model_name in available_models:
+                        # Prioritaskan model Llama, Qwen, atau Mixtral yang tersedia
+                        if any(brand in model_name.lower() for brand in ["llama", "qwen", "mixtral", "gemma"]):
+                            try:
+                                completion = client.chat.completions.create(
+                                    model=model_name,
+                                    messages=[
+                                        {"role": "system", "content": system_prompt},
+                                        {"role": "user", "content": user_query}
+                                    ],
+                                    temperature=0.1
+                                )
+                                bot_reply = completion.choices[0].message.content
+                                if bot_reply:
+                                    break
+                            except Exception as err:
+                                last_err = str(err)
+                                continue
+                    
                     if bot_reply:
                         break # Berhasil dapat jawaban, hentikan loop key
                 except Exception as err:
                     last_err = str(err)
-                    continue # Jika Key 1 error/limit, lanjut otomatis ke Key 2/3
+                    continue
 
             if bot_reply:
                 with st.chat_message("assistant"):
