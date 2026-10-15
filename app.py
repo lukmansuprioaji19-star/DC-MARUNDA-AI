@@ -72,11 +72,10 @@ if user_query:
             try:
                 client = Groq(api_key=GROQ_API_KEY)
                 
-                # Menggunakan model Groq resmi yang aktif
+                # Menggunakan HANYA model resmi Groq yang 100% AKTIF
                 models_to_try = [
-                    "llama-3.1-8b-instant",
-                    "llama3-8b-8192",
-                    "llama3-70b-8192"
+                    "llama-3.3-70b-versatile",
+                    "llama-3.1-8b-instant"
                 ]
                 
                 bot_reply = None
