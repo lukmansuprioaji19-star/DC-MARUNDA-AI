@@ -2,12 +2,21 @@ import streamlit as st
 import pandas as pd
 from groq import Groq
 
+# 1. Konfigurasi Halaman Web Streamlit
 st.set_page_config(page_title="Bot Informasi DC Marunda", page_icon="🤖")
 st.title("🤖 Bot Informasi DC Marunda")
 
-# MENGAMBIL API KEY UTAMA (Sesuai Secrets kamu)
-GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", "")
+# 2. Ambil Semua Kemungkinan API Key dari Secrets Streamlit (Otomatis & Fleksibel)
+raw_keys = [
+    st.secrets.get("GROQ_API_KEY", ""),
+    st.secrets.get("GROQ_API_KEY_1", ""),
+    st.secrets.get("GROQ_API_KEY_2", ""),
+    st.secrets.get("GROQ_API_KEY_3", ""),
+]
+# Saring hanya kunci yang tidak kosong dan tidak duplikat
+ACTIVE_KEYS = list(set([k for k in raw_keys if k]))
 
+# 3. ID Google Sheet Operasional DC Marunda
 SHEET_ID = "1pCLPIS2Gi55_hQPTAp8v753TeU6WWPbchAAKGPDg6wE"
 
 @st.cache_data(ttl=60)
@@ -35,6 +44,7 @@ def get_context_by_category(sheet_id, query):
     else:
         return load_sheet_tab(sheet_id, "INDENTITAS")
 
+# 4. Inisialisasi Riwayat Chat
 if "messages" not in st.session_state:
     st.session_state.messages = []
     welcome_text = """
@@ -50,11 +60,12 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
+# 5. Input Pertanyaan Pengguna
 user_query = st.chat_input("Ketik pertanyaan Anda di sini...")
 
 if user_query:
-    if not GROQ_API_KEY:
-        st.error("GROQ_API_KEY belum diset di Secrets Streamlit!")
+    if not ACTIVE_KEYS:
+        st.error("Gagal membaca GROQ_API_KEY di Secrets Streamlit! Pastikan format di Secrets sudah benar.")
     else:
         st.session_state.messages.append({"role": "user", "content": user_query})
         with st.chat_message("user"):
@@ -81,35 +92,43 @@ if user_query:
 
         with st.spinner("Mencari data..."):
             bot_reply = None
-            try:
-                client = Groq(api_key=GROQ_API_KEY)
-                
-                # Ambil daftar model aktif
-                models_list = client.models.list().data
-                valid_models = [m.id for m in models_list if "llama" in m.id.lower() and "guard" not in m.id.lower()]
-                
-                for model_name in valid_models:
-                    try:
-                        completion = client.chat.completions.create(
-                            model=model_name,
-                            messages=[
-                                {"role": "system", "content": system_prompt},
-                                {"role": "user", "content": user_query}
-                            ],
-                            temperature=0.1,
-                            max_tokens=600
-                        )
-                        bot_reply = completion.choices[0].message.content
-                        if bot_reply:
-                            break
-                    except Exception:
-                        continue
-            except Exception as e:
-                st.error(f"Error API: {str(e)}")
+            last_err = ""
+
+            messages_payload = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_query}
+            ]
+
+            for api_key in ACTIVE_KEYS:
+                try:
+                    client = Groq(api_key=api_key)
+                    models_list = client.models.list().data
+                    valid_models = [m.id for m in models_list if "llama" in m.id.lower() and "guard" not in m.id.lower()]
+                    
+                    for model_name in valid_models:
+                        try:
+                            completion = client.chat.completions.create(
+                                model=model_name,
+                                messages=messages_payload,
+                                temperature=0.1,
+                                max_tokens=600
+                            )
+                            bot_reply = completion.choices[0].message.content
+                            if bot_reply:
+                                break
+                        except Exception as m_err:
+                            last_err = str(m_err)
+                            continue
+                    
+                    if bot_reply:
+                        break
+                except Exception as err:
+                    last_err = str(err)
+                    continue
 
             if bot_reply:
                 with st.chat_message("assistant"):
                     st.markdown(bot_reply)
                 st.session_state.messages.append({"role": "assistant", "content": bot_reply})
             else:
-                st.error("Gagal mendapat respon. Coba tekan kirim sekali lagi.")
+                st.error(f"Gagal memproses pesan: {last_err}")
