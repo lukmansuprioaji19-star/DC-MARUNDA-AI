@@ -20,7 +20,7 @@ def load_all_sheets(sheet_id):
         url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={tab}"
         try:
             df = pd.read_csv(url)
-            # Hapus baris & kolom yang kosong agar super hemat token
+            # Hapus baris & kolom kosong agar super hemat token
             df = df.dropna(how="all").dropna(how="all", axis=1)
             if not df.empty:
                 all_context += f"\n--- TAB: {tab} ---\n"
@@ -52,17 +52,23 @@ if user_query:
 
         system_prompt = f"""
         Kamu adalah asisten bot informasi DC Marunda.
-        Tugasmu adalah menjawab pertanyaan pengguna dengan cepat, ramah, dan akurat berdasarkan data tabel yang diberikan.
 
-        ATURAN JAWABAN:
-        1. Jawab pertanyaan pengguna secara langsung tanpa meminta kata kunci/rahasia apa pun.
-        2. Jika pengguna menanyakan data insentif/poin karyawan, tampilkan jawabannya secara menurun (list/bullet points) yang rapi, contoh:
-           Informasi Insentif [Nama Karyawan] per [Tanggal]:
+        ATURAN KEAMANAN & RAHASIA DATA INSENTIF (SANGAT PENTING):
+        1. Khusus untuk pertanyaan mengenai data INSENTIF / POIN karyawan:
+           - Kamu HARUS memeriksa apakah pengguna telah menyertakan kata kunci yang sesuai untuk nama karyawan tersebut (data terdapat pada kolom 'Kata kunci' di tab INSENTIF).
+           - Jika pengguna BELUM menyebutkan 'Kata kunci' atau kata kuncinya SALAH/TIDAK COCOK dengan nama karyawan yang ditanyakan:
+             Sampaikan dengan sopan bahwa data insentif bersifat rahasia dan minta pengguna menyebutkan kata kunci yang benar terlebih dahulu.
+           - Jika pengguna SUDAH menyebutkan 'Kata kunci' yang BENAR dan cocok dengan nama karyawannya:
+             Tampilkan rincian insentif dan poin secara lengkap.
+
+        2. FORMAT TAMPILAN JAWABAN INSENTIF:
+           Tampilkan rincian data insentif secara menurun (list/bullet points) yang rapi, contoh:
+           Informasi Insentif [Nama Karyawan] per tanggal [Tanggal]:
            - NIK: [NIK]
            - Job: [Job/Posisi]
-           - Total Poin: [Total Poin & Nominal]
+           - Total Poin / Rincian: [Total Poin / Rincian dari tabel]
 
-        3. Jawab hanya berdasarkan data yang ada di tabel. Jika data tidak ditemukan, sampaikan secara sopan bahwa data tidak ditemukan.
+        3. Untuk pertanyaan umum di luar insentif (seperti NIK, Jabatan, KPI, Pencapaian, T-Code), kamu boleh menjawab langsung tanpa perlu kata kunci.
 
         [DATA TABEL OPERASIONAL DC MARUNDA]:
         {context_data}
@@ -72,14 +78,13 @@ if user_query:
             try:
                 client = Groq(api_key=GROQ_API_KEY)
                 
-                # OTOMATIS AMBIL DAFTAR MODEL YANG BENAR-BENAR AKTIF DI AKUN KAMU
+                # Otomatis ambil daftar model aktif di akun Groq kamu
                 available_models = [m.id for m in client.models.list().data]
                 
                 bot_reply = None
                 last_err = ""
 
                 for model_name in available_models:
-                    # Filter hanya model Llama, Qwen, atau Mixtral
                     if any(brand in model_name.lower() for brand in ["llama", "qwen", "mixtral", "gemma"]):
                         try:
                             completion = client.chat.completions.create(
