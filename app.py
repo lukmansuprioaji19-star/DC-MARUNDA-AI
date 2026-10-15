@@ -32,7 +32,7 @@ def load_sheet_tab(sheet_id, tab_name):
 def get_context_by_category(sheet_id, query):
     q = query.lower()
     
-    # Kategori Insentif (Khusus yang sebut kata kunci / insentif)
+    # Deteksi kategori Insentif
     if any(k in q for k in ["insentif", "poin", "point", "kata kunci"]):
         return load_sheet_tab(sheet_id, "INSENTIF")
     # Kategori KPI
@@ -96,7 +96,7 @@ if user_query:
 
         with st.spinner("Mencari data..."):
             bot_reply = None
-            last_err = "Gagal terhubung ke API Groq. Semua API Key sedang mencapai batas limit harian."
+            last_err = "Gagal terhubung. Pastikan API Key di Secrets sudah benar."
 
             messages_payload = [
                 {"role": "system", "content": system_prompt},
@@ -107,35 +107,32 @@ if user_query:
                 try:
                     client = Groq(api_key=api_key)
                     
-                    # Coba panggil model Llama 3.1 8B langsung
-                    try:
-                        completion = client.chat.completions.create(
-                            model="llama-3.1-8b-instant",
-                            messages=messages_payload,
-                            temperature=0.1,
-                            max_tokens=500
-                        )
-                        bot_reply = completion.choices[0].message.content
-                    except Exception as e_llama:
-                        last_err = str(e_llama)
-                        # Fallback ke model Llama lainnya jika model instant sibuk
-                        available_models = [m.id for m in client.models.list().data]
-                        for model_name in available_models:
-                            if "llama" in model_name.lower() and "guard" not in model_name.lower():
-                                try:
-                                    completion = client.chat.completions.create(
-                                        model=model_name,
-                                        messages=messages_payload,
-                                        temperature=0.1,
-                                        max_tokens=500
-                                    )
-                                    bot_reply = completion.choices[0].message.content
-                                    if bot_reply:
-                                        break
-                                except Exception as err_sub:
-                                    last_err = str(err_sub)
-                                    continue
-
+                    # 1. OTOMATIS AMBIL SEMUA MODEL AKTIF DI AKUN TERSEBUT
+                    models_list = client.models.list().data
+                    
+                    # 2. FILTER MODEL HANYA KELUARGA LLAMA / GEMMA (ABAIKAN QWEN & GUARD)
+                    valid_models = [
+                        m.id for m in models_list 
+                        if any(b in m.id.lower() for b in ["llama", "gemma"]) 
+                        and "guard" not in m.id.lower()
+                    ]
+                    
+                    # 3. KANTONGI & COBA MODEL SATU PER SATU DENGAN BEBAS ERROR 404
+                    for model_name in valid_models:
+                        try:
+                            completion = client.chat.completions.create(
+                                model=model_name,
+                                messages=messages_payload,
+                                temperature=0.1,
+                                max_tokens=600
+                            )
+                            bot_reply = completion.choices[0].message.content
+                            if bot_reply:
+                                break
+                        except Exception as m_err:
+                            last_err = str(m_err)
+                            continue
+                    
                     if bot_reply:
                         break
                 except Exception as err:
