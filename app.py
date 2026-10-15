@@ -32,6 +32,7 @@ def load_sheet_tab(sheet_id, tab_name):
 def get_context_by_category(sheet_id, query):
     q = query.lower()
     
+    # Deteksi pertanyaan insentif
     if any(k in q for k in ["insentif", "poin", "point", "absen", "kata kunci"]):
         return load_sheet_tab(sheet_id, "INSENTIF")
     elif any(k in q for k in ["identitas", "jadwal", "alamat", "nik", "nama", "jabatan", "masuk", "jam"]):
@@ -43,6 +44,7 @@ def get_context_by_category(sheet_id, query):
     elif any(k in q for k in ["tcode", "t-code", "code", "sap"]):
         return load_sheet_tab(sheet_id, "T-CODE")
     else:
+        # Default jika pengguna langsung mengetik Nama + Kata Kunci
         return load_sheet_tab(sheet_id, "INSENTIF")
 
 # 4. Inisialisasi Riwayat Chat
@@ -100,27 +102,33 @@ if user_query:
                 {"role": "user", "content": user_query}
             ]
 
-            # MODEL TARGET: Bebas error Qwen & Kuota Raksasa
-            TARGET_MODELS = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "mixtral-8x7b-32768"]
-
             for api_key in ACTIVE_KEYS:
                 try:
                     client = Groq(api_key=api_key)
                     
-                    for model_name in TARGET_MODELS:
-                        try:
-                            completion = client.chat.completions.create(
-                                model=model_name,
-                                messages=messages_payload,
-                                temperature=0.1,
-                                max_tokens=800
-                            )
-                            bot_reply = completion.choices[0].message.content
-                            if bot_reply:
-                                break
-                        except Exception as m_err:
-                            last_err = str(m_err)
-                            continue
+                    # Prioritaskan model ultra kencang llama-3.1-8b-instant
+                    try:
+                        completion = client.chat.completions.create(
+                            model="llama-3.1-8b-instant",
+                            messages=messages_payload,
+                            temperature=0.1,
+                            max_tokens=500  # Membatasi output agar respons super kencang & tidak hung
+                        )
+                        bot_reply = completion.choices[0].message.content
+                    except Exception:
+                        # Fallback ke model aktif lainnya jika model instant sibuk
+                        available_models = [m.id for m in client.models.list().data]
+                        for model_name in available_models:
+                            if "llama" in model_name.lower():
+                                completion = client.chat.completions.create(
+                                    model=model_name,
+                                    messages=messages_payload,
+                                    temperature=0.1,
+                                    max_tokens=500
+                                )
+                                bot_reply = completion.choices[0].message.content
+                                if bot_reply:
+                                    break
 
                     if bot_reply:
                         break
