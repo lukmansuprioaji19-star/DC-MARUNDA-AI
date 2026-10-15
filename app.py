@@ -20,9 +20,12 @@ def load_all_sheets(sheet_id):
         url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={tab}"
         try:
             df = pd.read_csv(url)
+            # Bersihkan kolom & baris yang sepenuhnya kosong agar tidak boros token
+            df = df.dropna(how="all").dropna(how="all", axis=1)
             if not df.empty:
                 all_context += f"\n\n--- TAB SHEET: {tab} ---\n"
-                all_context += df.to_string(index=False)
+                # Gunakan format CSV string agar sangat hemat token & rapi dibaca AI
+                all_context += df.to_csv(index=False)
         except Exception:
             continue
     return all_context
@@ -76,11 +79,10 @@ if user_query:
             try:
                 client = Groq(api_key=GROQ_API_KEY)
                 
-                # Daftar Model Production Aktif Groq (100% Aktif & Bebas Error Decommissioned)
+                # CUMA PAKAI MODEL DENGAN KAPASITAS TOKEN JUMBO (128k - 131k TPM)
                 models_to_try = [
                     "llama-3.3-70b-versatile",
-                    "llama-3.1-8b-instant",
-                    "openai/gpt-oss-120b"
+                    "llama-3.1-8b-instant"
                 ]
                 
                 bot_reply = None
