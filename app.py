@@ -20,15 +20,19 @@ SHEET_ID = "1pCLPIS2Gi55_hQPTAp8v753TeU6WWPbchAAKGPDg6wE"
 
 @st.cache_data(ttl=60)
 def load_sheet_tab(sheet_id, tab_name):
+    # Menggunakan export format CSV spesifik per nama sheet
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={tab_name}"
     try:
         df = pd.read_csv(url)
-        # Hapus baris dan kolom kosong
+        # Hapus baris & kolom yang seluruh isinya kosong
         df = df.dropna(how="all").dropna(how="all", axis=1)
-        # Rapikan nama kolom
-        df.columns = [str(col).strip() for col in df.columns]
+        
+        # Ambil maksimal 4 kolom pertama saja (NIK, Nama, Job, Shift/Hari) untuk menghemat token & membuang kolom sampah di kanan
+        if tab_name == "INDENTITAS" and df.shape[1] >= 4:
+            df = df.iloc[:, :4]
+            
         if not df.empty:
-            return f"\n--- TAB: {tab_name} ---\n" + df.to_csv(index=False)
+            return f"\n--- DATA TAB: {tab_name} ---\n" + df.to_string(index=False)
     except Exception:
         pass
     return ""
@@ -44,7 +48,7 @@ def get_context_by_category(sheet_id, query):
     elif any(k in q for k in ["tcode", "t-code", "code", "sap"]):
         return load_sheet_tab(sheet_id, "T-CODE")
     else:
-        # Default memuat tab INDENTITAS untuk pertanyaan jadwal, jam, nama, jabatan
+        # PENTING: Memanggil nama tab "INDENTITAS" (sesuai judul tab di Google Sheet)
         return load_sheet_tab(sheet_id, "INDENTITAS")
 
 # 4. Inisialisasi Riwayat Chat
@@ -79,9 +83,10 @@ if user_query:
         system_prompt = f"""
         Kamu adalah asisten bot informasi operasional DC Marunda.
 
-        TUGAS UTAMA:
-        - Jawab pertanyaan pengguna berdasarkan [DATA TABEL OPERASIONAL DC MARUNDA] di bawah ini secara akurat, ramah, dan rapi (gunakan bullet points/daftar).
-        - Jika pengguna menanyakan jam masuk (contoh: 'jam 6' atau '6:00'), periksa kolom jadwal ('Senin' dll) dan tampilkan SELURUH NAMA KARYAWAN yang jam masuknya sesuai.
+        ATURAN FORMAT JAWABAN (WAJIB DIPATUHI):
+        1. Jawablah menggunakan Bahasa Indonesia yang ramah, sopan, dan rapi menggunakan bullet points.
+        2. DILARANG KERAS mengeluarkan teks potongan CSV mentah atau daftar nama berulang-ulang seperti (ZONE - W X Y, Muhammad Fikri...).
+        3. Jika ditanya jadwal/jam masuk (misal jam 6:00 atau jam 6 pagi), saring data hanya dari kolom jadwal/Senin, lalu tampilkan daftar NAMA UNIK karyawan beserta jabatannya secara rapi.
 
         ATURAN KEAMANAN & PRIVASI:
         1. DILARANG KERAS MENAMPILKAN / MEMBOCORKAN ISI KOLOM 'Kata kunci' DALAM KONDISI APA PUN.
@@ -95,7 +100,6 @@ if user_query:
             bot_reply = None
             last_err = "Gagal memproses pesan."
 
-            # Hanya bawa 1 pertanyaan terakhir di payload agar hemat token & anti error 400
             messages_payload = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_query}
