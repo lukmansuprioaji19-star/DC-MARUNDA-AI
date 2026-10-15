@@ -32,7 +32,6 @@ def load_sheet_tab(sheet_id, tab_name):
 def get_context_by_category(sheet_id, query):
     q = query.lower()
     
-    # Deteksi pertanyaan insentif
     if any(k in q for k in ["insentif", "poin", "point", "absen", "kata kunci"]):
         return load_sheet_tab(sheet_id, "INSENTIF")
     elif any(k in q for k in ["identitas", "jadwal", "alamat", "nik", "nama", "jabatan", "masuk", "jam"]):
@@ -44,8 +43,8 @@ def get_context_by_category(sheet_id, query):
     elif any(k in q for k in ["tcode", "t-code", "code", "sap"]):
         return load_sheet_tab(sheet_id, "T-CODE")
     else:
-        # Default jika pengguna langsung mengetik Nama + Kata Kunci
-        return load_sheet_tab(sheet_id, "INSENTIF")
+        # Default jika mengetik nama/kata kunci secara langsung
+        return load_sheet_tab(sheet_id, "INSENTIF") + "\n" + load_sheet_tab(sheet_id, "INDENTITAS")
 
 # 4. Inisialisasi Riwayat Chat
 if "messages" not in st.session_state:
@@ -106,30 +105,26 @@ if user_query:
                 try:
                     client = Groq(api_key=api_key)
                     
-                    # Prioritaskan model ultra kencang llama-3.1-8b-instant
-                    try:
-                        completion = client.chat.completions.create(
-                            model="llama-3.1-8b-instant",
-                            messages=messages_payload,
-                            temperature=0.1,
-                            max_tokens=500  # Membatasi output agar respons super kencang & tidak hung
-                        )
-                        bot_reply = completion.choices[0].message.content
-                    except Exception:
-                        # Fallback ke model aktif lainnya jika model instant sibuk
-                        available_models = [m.id for m in client.models.list().data]
-                        for model_name in available_models:
-                            if "llama" in model_name.lower():
+                    # Otomatis ambil hanya model yang BENAR-BENAR TERSEDIA di Groq saat ini
+                    available_models = [m.id for m in client.models.list().data]
+                    
+                    for model_name in available_models:
+                        # Pilih Llama atau Gemma (Abaikan Qwen pemicu limit & Mixtral mati)
+                        if any(b in model_name.lower() for b in ["llama", "gemma"]) and "guard" not in model_name.lower():
+                            try:
                                 completion = client.chat.completions.create(
                                     model=model_name,
                                     messages=messages_payload,
                                     temperature=0.1,
-                                    max_tokens=500
+                                    max_tokens=600
                                 )
                                 bot_reply = completion.choices[0].message.content
                                 if bot_reply:
                                     break
-
+                            except Exception as m_err:
+                                last_err = str(m_err)
+                                continue
+                    
                     if bot_reply:
                         break
                 except Exception as err:
