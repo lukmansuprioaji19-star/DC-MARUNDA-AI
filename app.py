@@ -38,6 +38,7 @@ def get_smart_context(sheet_id, query):
     if any(k in q for k in ["tcode", "t-code", "code"]):
         tabs.append("T-CODE")
     
+    # Jika pertanyaan umum/sapaan, hanya muat tab INDENTITAS biar hemat token
     if not tabs:
         tabs = ["INDENTITAS"]
 
@@ -95,21 +96,38 @@ if user_query:
             try:
                 client = Groq(api_key=GROQ_API_KEY)
                 
-                # NAMA MODEL RESMI GROQ AKTIF: llama3-8b-8192
-                completion = client.chat.completions.create(
-                    model="llama3-8b-8192",
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_query}
-                    ],
-                    temperature=0.2
-                )
+                # Model resmi Groq aktif 2026
+                models_to_try = [
+                    "llama-3.1-8b-instant",
+                    "meta-llama/llama-4-scout-17b-16e-instruct"
+                ]
                 
-                bot_reply = completion.choices[0].message.content
-                
-                with st.chat_message("assistant"):
-                    st.markdown(bot_reply)
-                st.session_state.messages.append({"role": "assistant", "content": bot_reply})
+                bot_reply = None
+                last_err = ""
+
+                for m in models_to_try:
+                    try:
+                        completion = client.chat.completions.create(
+                            model=m,
+                            messages=[
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": user_query}
+                            ],
+                            temperature=0.2
+                        )
+                        bot_reply = completion.choices[0].message.content
+                        if bot_reply:
+                            break
+                    except Exception as err:
+                        last_err = str(err)
+                        continue
+
+                if bot_reply:
+                    with st.chat_message("assistant"):
+                        st.markdown(bot_reply)
+                    st.session_state.messages.append({"role": "assistant", "content": bot_reply})
+                else:
+                    st.error(f"Gagal memproses pesan: {last_err}")
                 
             except Exception as e:
                 st.error(f"Gagal memproses pesan: {str(e)}")
