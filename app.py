@@ -102,16 +102,16 @@ if user_query:
                 try:
                     client = Groq(api_key=api_key)
                     
-                    # Dapatkan daftar model aktif dari server Groq
-                    try:
-                        active_models = [m.id for m in client.models.list().data if "llama" in m.id.lower() and "guard" not in m.id.lower()]
-                    except Exception:
-                        active_models = ["llama-3.3-70b-versatile"]
+                    # AMBIL SELURUH DAFTAR MODEL YANG DIIZINKAN DI AKUN INI
+                    all_models = client.models.list().data
+                    # Filter: Abaikan model 'guard' atau 'whisper' (khusus audio)
+                    available_text_models = [
+                        m.id for m in all_models 
+                        if "guard" not in m.id.lower() and "whisper" not in m.id.lower()
+                    ]
 
-                    if not active_models:
-                        active_models = ["llama-3.3-70b-versatile"]
-
-                    for model_name in active_models:
+                    # Coba satu per satu model yang benar-benar ada di akun kamu
+                    for model_name in available_text_models:
                         try:
                             completion = client.chat.completions.create(
                                 model=model_name,
