@@ -32,19 +32,21 @@ def load_sheet_tab(sheet_id, tab_name):
 def get_context_by_category(sheet_id, query):
     q = query.lower()
     
-    if any(k in q for k in ["insentif", "poin", "point", "absen", "kata kunci"]):
+    # Kategori Insentif (Khusus yang sebut kata kunci / insentif)
+    if any(k in q for k in ["insentif", "poin", "point", "kata kunci"]):
         return load_sheet_tab(sheet_id, "INSENTIF")
-    elif any(k in q for k in ["identitas", "jadwal", "alamat", "nik", "nama", "jabatan", "masuk", "jam"]):
-        return load_sheet_tab(sheet_id, "INDENTITAS")
+    # Kategori KPI
     elif any(k in q for k in ["kpi", "whu", "ofr"]):
         return load_sheet_tab(sheet_id, "KPI")
+    # Kategori Pencapaian
     elif any(k in q for k in ["pencapaian", "box", "pcs", "lead time"]):
         return load_sheet_tab(sheet_id, "PENCAPAIAN")
+    # Kategori T-Code
     elif any(k in q for k in ["tcode", "t-code", "code", "sap"]):
         return load_sheet_tab(sheet_id, "T-CODE")
     else:
-        # Default jika mengetik nama/kata kunci secara langsung
-        return load_sheet_tab(sheet_id, "INSENTIF") + "\n" + load_sheet_tab(sheet_id, "INDENTITAS")
+        # Default untuk pertanyaan nama/sapaan/identitas/jam kerja
+        return load_sheet_tab(sheet_id, "INDENTITAS")
 
 # 4. Inisialisasi Riwayat Chat
 if "messages" not in st.session_state:
@@ -53,7 +55,7 @@ if "messages" not in st.session_state:
 👋 **Selamat Datang di Bot Informasi DC Marunda!**
 
 Silakan tanyakan informasi yang Anda butuhkan:
-- **Identitas & Jadwal Kerja**: *"Siapa saja yang masuk jam 6 pagi?"*
+- **Identitas & Jadwal Kerja**: *"Siapa saja yang masuk jam 6 pagi?"* atau *"Lu tahu Lukman?"*
 - **Cek Insentif**: *"Sodikin Belut Bingung"* (Memerlukan Kata Kunci)
     """
     st.session_state.messages.append({"role": "assistant", "content": welcome_text})
@@ -80,7 +82,7 @@ if user_query:
 
         ATURAN KEAMANAN & PRIVASI (SANGAT PENTING):
         1. DILARANG KERAS MENAMPILKAN / MEMBOCORKAN ISI KOLOM 'Kata kunci' DALAM KONDISI APA PUN.
-        2. Khusus pertanyaan Identitas/Jadwal/Alamat: Jawab langsung TANPA pernah menyebutkan kata kunci rahasianya.
+        2. Khusus pertanyaan Identitas/Jadwal/Alamat/Pertanyaan Nama Karyawan: Jawab langsung ramah dan ringkas TANPA pernah menyebutkan kata kunci rahasianya.
 
         ATURAN VERIFIKASI DATA INSENTIF & POIN:
         1. Data INSENTIF/POIN hanya boleh ditampilkan jika pengguna menyertakan 'Kata kunci' yang COCOK/BENAR dengan nama karyawan tersebut.
@@ -94,7 +96,7 @@ if user_query:
 
         with st.spinner("Mencari data..."):
             bot_reply = None
-            last_err = ""
+            last_err = "Gagal terhubung ke API Groq. Semua API Key sedang mencapai batas limit harian."
 
             messages_payload = [
                 {"role": "system", "content": system_prompt},
@@ -105,26 +107,35 @@ if user_query:
                 try:
                     client = Groq(api_key=api_key)
                     
-                    # Otomatis ambil hanya model yang BENAR-BENAR TERSEDIA di Groq saat ini
-                    available_models = [m.id for m in client.models.list().data]
-                    
-                    for model_name in available_models:
-                        # Pilih Llama atau Gemma (Abaikan Qwen pemicu limit & Mixtral mati)
-                        if any(b in model_name.lower() for b in ["llama", "gemma"]) and "guard" not in model_name.lower():
-                            try:
-                                completion = client.chat.completions.create(
-                                    model=model_name,
-                                    messages=messages_payload,
-                                    temperature=0.1,
-                                    max_tokens=600
-                                )
-                                bot_reply = completion.choices[0].message.content
-                                if bot_reply:
-                                    break
-                            except Exception as m_err:
-                                last_err = str(m_err)
-                                continue
-                    
+                    # Coba panggil model Llama 3.1 8B langsung
+                    try:
+                        completion = client.chat.completions.create(
+                            model="llama-3.1-8b-instant",
+                            messages=messages_payload,
+                            temperature=0.1,
+                            max_tokens=500
+                        )
+                        bot_reply = completion.choices[0].message.content
+                    except Exception as e_llama:
+                        last_err = str(e_llama)
+                        # Fallback ke model Llama lainnya jika model instant sibuk
+                        available_models = [m.id for m in client.models.list().data]
+                        for model_name in available_models:
+                            if "llama" in model_name.lower() and "guard" not in model_name.lower():
+                                try:
+                                    completion = client.chat.completions.create(
+                                        model=model_name,
+                                        messages=messages_payload,
+                                        temperature=0.1,
+                                        max_tokens=500
+                                    )
+                                    bot_reply = completion.choices[0].message.content
+                                    if bot_reply:
+                                        break
+                                except Exception as err_sub:
+                                    last_err = str(err_sub)
+                                    continue
+
                     if bot_reply:
                         break
                 except Exception as err:
