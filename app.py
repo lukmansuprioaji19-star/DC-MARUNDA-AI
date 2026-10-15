@@ -61,9 +61,12 @@ if user_query:
              Tampilkan rincian insentif secara lengkap.
 
         2. FORMAT TAMPILAN JAWABAN INSENTIF:
-           Tampilkan rincian data insentif secara menurun (list/bullet points) yang rapi.
+           Tampilkan rincian data insentif secara menurun (list/bullet points) yang rapi, contoh:
+           Insentif [Nama Karyawan] per tanggal [Tanggal]:
+           - Total Poin: [Nilai]
+           - [Komponen lain yang tersedia]
 
-        3. Untuk pertanyaan umum (seperti Jabatan, NIK, KPI, Pencapaian, T-Code), kamu boleh menjawab langsung tanpa perlu kata kunci.
+        3. Untuk pertanyaan umum (seperti Jabatan, NIK, KPI, Pencapaian, T-Code), kamu boleh menjawab langsung tanpa perlu kata kunci, kecuali jika pengguna menanyakan data insentif.
 
         [DATA TABEL OPERASIONAL DC MARUNDA]:
         {context_data}
@@ -73,38 +76,20 @@ if user_query:
             try:
                 client = Groq(api_key=GROQ_API_KEY)
                 
-                # Daftar nama model resmi dari Groq API
-                valid_models = [
-                    "llama-3.3-70b-versatile",
-                    "llama-3.1-8b-instant"
-                ]
+                completion = client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_query}
+                    ],
+                    temperature=0.2
+                )
                 
-                bot_reply = None
-                last_err = ""
-
-                for model_name in valid_models:
-                    try:
-                        completion = client.chat.completions.create(
-                            model=model_name,
-                            messages=[
-                                {"role": "system", "content": system_prompt},
-                                {"role": "user", "content": user_query}
-                            ],
-                            temperature=0.2
-                        )
-                        bot_reply = completion.choices[0].message.content
-                        if bot_reply:
-                            break
-                    except Exception as err:
-                        last_err = str(err)
-                        continue
-
-                if bot_reply:
-                    with st.chat_message("assistant"):
-                        st.markdown(bot_reply)
-                    st.session_state.messages.append({"role": "assistant", "content": bot_reply})
-                else:
-                    st.error(f"Gagal memproses pesan. Detail: {last_err}")
+                bot_reply = completion.choices[0].message.content
+                
+                with st.chat_message("assistant"):
+                    st.markdown(bot_reply)
+                st.session_state.messages.append({"role": "assistant", "content": bot_reply})
                 
             except Exception as e:
                 st.error(f"Gagal memproses pesan: {str(e)}")
