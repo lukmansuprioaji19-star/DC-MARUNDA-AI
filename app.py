@@ -32,7 +32,6 @@ def load_sheet_tab(sheet_id, tab_name):
 def get_context_by_category(sheet_id, query):
     q = query.lower()
     
-    # Ambil tab spesifik saja agar token super hemat
     if any(k in q for k in ["insentif", "poin", "point", "absen", "kata kunci"]):
         return load_sheet_tab(sheet_id, "INSENTIF")
     elif any(k in q for k in ["identitas", "jadwal", "alamat", "nik", "nama", "jabatan", "masuk", "jam"]):
@@ -44,8 +43,7 @@ def get_context_by_category(sheet_id, query):
     elif any(k in q for k in ["tcode", "t-code", "code", "sap"]):
         return load_sheet_tab(sheet_id, "T-CODE")
     else:
-        # Default jika pertanyaan umum, ambil tab INDENTITAS
-        return load_sheet_tab(sheet_id, "INDENTITAS")
+        return load_sheet_tab(sheet_id, "INSENTIF")
 
 # 4. Inisialisasi Riwayat Chat
 if "messages" not in st.session_state:
@@ -54,7 +52,7 @@ if "messages" not in st.session_state:
 👋 **Selamat Datang di Bot Informasi DC Marunda!**
 
 Silakan tanyakan informasi yang Anda butuhkan:
-- **Identitas & Jadwal Kerja**: *"Jam berapa Anwar masuk?"* atau *"Alamat Herry"*
+- **Identitas & Jadwal Kerja**: *"Siapa saja yang masuk jam 6 pagi?"*
 - **Cek Insentif**: *"Sodikin Belut Bingung"* (Memerlukan Kata Kunci)
     """
     st.session_state.messages.append({"role": "assistant", "content": welcome_text})
@@ -74,21 +72,20 @@ if user_query:
         with st.chat_message("user"):
             st.markdown(user_query)
 
-        # Muat HANYA 1 TAB SHEET sesuai pertanyaan (Hemat Token!)
         context_data = get_context_by_category(SHEET_ID, user_query)
 
         system_prompt = f"""
         Kamu adalah asisten bot informasi DC Marunda.
 
         ATURAN KEAMANAN & PRIVASI (SANGAT PENTING):
-        1. DILARANG KERAS MENAMPILKAN / MEMBOCORKAN ISI KOLOM 'Kata kunci' DALAM KONDISI APA PUN, TERMASUK SAAT USER MENANYAKAN IDENTITAS KARYAWAN.
+        1. DILARANG KERAS MENAMPILKAN / MEMBOCORKAN ISI KOLOM 'Kata kunci' DALAM KONDISI APA PUN.
         2. Khusus pertanyaan Identitas/Jadwal/Alamat: Jawab langsung TANPA pernah menyebutkan kata kunci rahasianya.
 
         ATURAN VERIFIKASI DATA INSENTIF & POIN:
-        1. Data INSENTIF/POIN di kolom 'Total Poin' hanya boleh ditampilkan jika pengguna menyertakan 'Kata kunci' yang COCOK/BENAR dengan nama karyawan tersebut.
-        2. Jika pengguna menyebutkan Nama dan Kata Kunci yang BENAR (contoh: "Sodikin Belut Bingung"), LANGSUNG tampilkan seluruh isi teks rincian poin insentif karyawan tersebut secara rapi dan utuh (menurun per poin).
-        3. Jika Kata Kunci SALAH / BELUM DIBERIKAN oleh pengguna:
-           Sampaikan dengan sopan bahwa data insentif bersifat rahasia dan minta pengguna menyebutkan Nama Karyawan dan Kata Kunci yang benar.
+        1. Data INSENTIF/POIN hanya boleh ditampilkan jika pengguna menyertakan 'Kata kunci' yang COCOK/BENAR dengan nama karyawan tersebut.
+        2. Jika Nama dan Kata Kunci BENAR (contoh: "Sodikin Belut Bingung"), LANGSUNG tampilkan rincian poin insentif karyawan tersebut secara ringkas dan rapi (list menurun).
+        3. Jika Kata Kunci SALAH / BELUM DIBERIKAN:
+           Minta pengguna menyebutkan Nama Karyawan dan Kata Kunci yang benar terlebih dahulu.
 
         [DATA TABEL OPERASIONAL DC MARUNDA]:
         {context_data}
@@ -98,31 +95,33 @@ if user_query:
             bot_reply = None
             last_err = ""
 
-            # KUNCI UTAMA ANTI ERROR 400:
-            # Hanya bawa 1 pesan terakhir saja di memori payload agar tidak membengkak!
-            messages_payload = [{"role": "system", "content": system_prompt}]
-            messages_payload.append({"role": "user", "content": user_query})
+            messages_payload = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_query}
+            ]
+
+            # MODEL TARGET: Bebas error Qwen & Kuota Raksasa
+            TARGET_MODELS = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "mixtral-8x7b-32768"]
 
             for api_key in ACTIVE_KEYS:
                 try:
                     client = Groq(api_key=api_key)
-                    available_models = [m.id for m in client.models.list().data]
                     
-                    for model_name in available_models:
-                        if any(brand in model_name.lower() for brand in ["llama", "qwen", "mixtral", "gemma"]):
-                            try:
-                                completion = client.chat.completions.create(
-                                    model=model_name,
-                                    messages=messages_payload,
-                                    temperature=0.1
-                                )
-                                bot_reply = completion.choices[0].message.content
-                                if bot_reply:
-                                    break
-                            except Exception as err:
-                                last_err = str(err)
-                                continue
-                    
+                    for model_name in TARGET_MODELS:
+                        try:
+                            completion = client.chat.completions.create(
+                                model=model_name,
+                                messages=messages_payload,
+                                temperature=0.1,
+                                max_tokens=800
+                            )
+                            bot_reply = completion.choices[0].message.content
+                            if bot_reply:
+                                break
+                        except Exception as m_err:
+                            last_err = str(m_err)
+                            continue
+
                     if bot_reply:
                         break
                 except Exception as err:
