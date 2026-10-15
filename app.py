@@ -72,31 +72,30 @@ if user_query:
             try:
                 client = Groq(api_key=GROQ_API_KEY)
                 
-                # Menggunakan HANYA model resmi Groq yang 100% AKTIF
-                models_to_try = [
-                    "llama-3.3-70b-versatile",
-                    "llama-3.1-8b-instant"
-                ]
+                # OTOMATIS AMBIL DAFTAR MODEL YANG BENAR-BENAR AKTIF DI AKUN KAMU
+                available_models = [m.id for m in client.models.list().data]
                 
                 bot_reply = None
                 last_err = ""
 
-                for model_name in models_to_try:
-                    try:
-                        completion = client.chat.completions.create(
-                            model=model_name,
-                            messages=[
-                                {"role": "system", "content": system_prompt},
-                                {"role": "user", "content": user_query}
-                            ],
-                            temperature=0.2
-                        )
-                        bot_reply = completion.choices[0].message.content
-                        if bot_reply:
-                            break
-                    except Exception as err:
-                        last_err = str(err)
-                        continue
+                for model_name in available_models:
+                    # Filter hanya model Llama, Qwen, atau Mixtral
+                    if any(brand in model_name.lower() for brand in ["llama", "qwen", "mixtral", "gemma"]):
+                        try:
+                            completion = client.chat.completions.create(
+                                model=model_name,
+                                messages=[
+                                    {"role": "system", "content": system_prompt},
+                                    {"role": "user", "content": user_query}
+                                ],
+                                temperature=0.2
+                            )
+                            bot_reply = completion.choices[0].message.content
+                            if bot_reply:
+                                break
+                        except Exception as err:
+                            last_err = str(err)
+                            continue
 
                 if bot_reply:
                     with st.chat_message("assistant"):
