@@ -13,23 +13,41 @@ GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", "")
 SHEET_ID = "1pCLPIS2Gi55_hQPTAp8v753TeU6WWPbchAAKGPDg6wE"
 
 @st.cache_data(ttl=60)
-def load_all_sheets(sheet_id):
-    tab_names = ["INDENTITAS", "INSENTIF", "KPI", "PENCAPAIAN", "T-CODE"]
-    all_context = ""
-    for tab in tab_names:
-        url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={tab}"
-        try:
-            df = pd.read_csv(url)
-            # Hapus baris & kolom kosong agar super hemat token
-            df = df.dropna(how="all").dropna(how="all", axis=1)
-            if not df.empty:
-                all_context += f"\n--- TAB: {tab} ---\n"
-                all_context += df.to_csv(index=False)
-        except Exception:
-            continue
-    return all_context
+def load_sheet_tab(sheet_id, tab_name):
+    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={tab_name}"
+    try:
+        df = pd.read_csv(url)
+        df = df.dropna(how="all").dropna(how="all", axis=1)
+        if not df.empty:
+            return f"\n--- TAB: {tab_name} ---\n" + df.to_csv(index=False)
+    except Exception:
+        pass
+    return ""
 
-context_data = load_all_sheets(SHEET_ID)
+def get_smart_context(sheet_id, query):
+    q = query.lower()
+    tabs = []
+    
+    # Filter tab sesuai kebutuhan pertanyaan (Sangat Hemat Token)
+    if any(k in q for k in ["insentif", "poin", "point", "absen", "kata kunci"]):
+        tabs.append("INSENTIF")
+    if any(k in q for k in ["nik", "nama", "jabatan", "identitas", "job", "alamat"]):
+        tabs.append("INDENTITAS")
+    if any(k in q for k in ["kpi", "whu", "ofr"]):
+        tabs.append("KPI")
+    if any(k in q for k in ["pencapaian", "box", "pcs", "lead time"]):
+        tabs.append("PENCAPAIAN")
+    if any(k in q for k in ["tcode", "t-code", "code"]):
+        tabs.append("T-CODE")
+    
+    # Jika sapaan santai / tidak spesifik, muat tab INSENTIF & INDENTITAS saja
+    if not tabs:
+        tabs = ["INSENTIF", "INDENTITAS"]
+
+    context = ""
+    for tab in tabs:
+        context += load_sheet_tab(sheet_id, tab)
+    return context
 
 # 4. Inisialisasi Riwayat Chat
 if "messages" not in st.session_state:
@@ -50,25 +68,21 @@ if user_query:
         with st.chat_message("user"):
             st.markdown(user_query)
 
+        # Hanya muat context tab yang dibutuhkan pengguna
+        context_data = get_smart_context(SHEET_ID, user_query)
+
         system_prompt = f"""
         Kamu adalah asisten bot informasi DC Marunda.
 
-        ATURAN KEAMANAN & RAHASIA DATA INSENTIF (SANGAT PENTING):
-        1. Khusus untuk pertanyaan mengenai data INSENTIF / POIN karyawan:
-           - Kamu HARUS memeriksa apakah pengguna telah menyertakan kata kunci yang sesuai untuk nama karyawan tersebut (data terdapat pada kolom 'Kata kunci' di tab INSENTIF).
-           - Jika pengguna BELUM menyebutkan 'Kata kunci' atau kata kuncinya SALAH/TIDAK COCOK dengan nama karyawan yang ditanyakan:
-             Sampaikan dengan sopan bahwa data insentif bersifat rahasia dan minta pengguna menyebutkan kata kunci yang benar terlebih dahulu.
-           - Jika pengguna SUDAH menyebutkan 'Kata kunci' yang BENAR dan cocok dengan nama karyawannya:
-             Tampilkan rincian insentif dan poin secara lengkap.
+        ATURAN KEAMANAN & PRIVASI (SANGAT PENTING):
+        1. DILARANG KERAS MENAMPILKAN / MEMBOCORKAN ISI KOLOM 'Kata kunci' DALAM KONDISI APA PUN, TERMASUK SAAT USER MENANYAKAN IDENTITAS KARYAWAN.
+        2. Khusus pertanyaan umum/identitas (NIK, Jabatan, Nama, Alamat): Jawab langsung TANPA pernah menyebutkan kata kunci rahasianya.
 
-        2. FORMAT TAMPILAN JAWABAN INSENTIF:
-           Tampilkan rincian data insentif secara menurun (list/bullet points) yang rapi, contoh:
-           Informasi Insentif [Nama Karyawan] per tanggal [Tanggal]:
-           - NIK: [NIK]
-           - Job: [Job/Posisi]
-           - Total Poin / Rincian: [Total Poin / Rincian dari tabel]
-
-        3. Untuk pertanyaan umum di luar insentif (seperti NIK, Jabatan, KPI, Pencapaian, T-Code), kamu boleh menjawab langsung tanpa perlu kata kunci.
+        ATURAN VERIFIKASI DATA INSENTIF & POIN:
+        1. Data INSENTIF/POIN di kolom 'Total Poin' hanya boleh ditampilkan jika pengguna menyebutkan 'Kata kunci' yang COCOK/BENAR dengan nama karyawan tersebut.
+        2. Jika pengguna menyebutkan Kata Kunci yang BENAR, LANGSUNG tampilkan seluruh isi teks rincian poin insentif karyawan tersebut secara rapi dan utuh.
+        3. Jika Kata Kunci SALAH / BELUM DIBERIKAN oleh pengguna:
+           Sampaikan dengan sopan bahwa data insentif bersifat rahasia dan minta pengguna menyebutkan Kata Kunci yang benar terlebih dahulu.
 
         [DATA TABEL OPERASIONAL DC MARUNDA]:
         {context_data}
@@ -84,16 +98,18 @@ if user_query:
                 bot_reply = None
                 last_err = ""
 
+                # Kirim riwayat chat (4 pesan terakhir) agar AI paham konteks
+                messages_payload = [{"role": "system", "content": system_prompt}]
+                for msg in st.session_state.messages[-4:]:
+                    messages_payload.append({"role": msg["role"], "content": msg["content"]})
+
                 for model_name in available_models:
                     if any(brand in model_name.lower() for brand in ["llama", "qwen", "mixtral", "gemma"]):
                         try:
                             completion = client.chat.completions.create(
                                 model=model_name,
-                                messages=[
-                                    {"role": "system", "content": system_prompt},
-                                    {"role": "user", "content": user_query}
-                                ],
-                                temperature=0.2
+                                messages=messages_payload,
+                                temperature=0.1
                             )
                             bot_reply = completion.choices[0].message.content
                             if bot_reply:
