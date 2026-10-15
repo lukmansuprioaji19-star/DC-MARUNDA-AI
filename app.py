@@ -76,11 +76,11 @@ if user_query:
             try:
                 client = Groq(api_key=GROQ_API_KEY)
                 
-                # Model Groq berkapasitas konteks besar & gratis
+                # Daftar Model Production Aktif Groq (100% Aktif & Bebas Error Decommissioned)
                 models_to_try = [
                     "llama-3.3-70b-versatile",
                     "llama-3.1-8b-instant",
-                    "mixtral-8x7b-32768"
+                    "openai/gpt-oss-120b"
                 ]
                 
                 bot_reply = None
