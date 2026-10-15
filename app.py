@@ -23,13 +23,12 @@ def load_sheet_tab(sheet_id, tab_name):
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={tab_name}"
     try:
         df = pd.read_csv(url)
-        # Hapus baris dan kolom yang benar-benar kosong
+        # Hapus baris dan kolom kosong
         df = df.dropna(how="all").dropna(how="all", axis=1)
-        # Bersihkan nama kolom dari spasi berlebih
+        # Rapikan nama kolom
         df.columns = [str(col).strip() for col in df.columns]
         if not df.empty:
-            # Ubah ke string Markdown rapi daripada CSV mentah agar AI tidak bingung
-            return f"\n--- TAB: {tab_name} ---\n" + df.to_markdown(index=False)
+            return f"\n--- TAB: {tab_name} ---\n" + df.to_csv(index=False)
     except Exception:
         pass
     return ""
@@ -45,6 +44,7 @@ def get_context_by_category(sheet_id, query):
     elif any(k in q for k in ["tcode", "t-code", "code", "sap"]):
         return load_sheet_tab(sheet_id, "T-CODE")
     else:
+        # Default memuat tab INDENTITAS untuk pertanyaan jadwal, jam, nama, jabatan
         return load_sheet_tab(sheet_id, "INDENTITAS")
 
 # 4. Inisialisasi Riwayat Chat
@@ -54,7 +54,7 @@ if "messages" not in st.session_state:
 👋 **Selamat Datang di Bot Informasi DC Marunda!**
 
 Silakan tanyakan informasi yang Anda butuhkan:
-- **Identitas & Jadwal Kerja**: *"Siapa saja yang masuk jam 6 pagi?"* atau *"Sodikin jabatannya apa?"*
+- **Identitas & Jadwal Kerja**: *"Siapa saja yang masuk jam 6 pagi?"* atau *"Anwar jam berapa masuk?"*
 - **Cek Insentif**: *"Sodikin Belut Bingung"* (Memerlukan Kata Kunci)
     """
     st.session_state.messages.append({"role": "assistant", "content": welcome_text})
@@ -68,7 +68,7 @@ user_query = st.chat_input("Ketik pertanyaan Anda di sini...")
 
 if user_query:
     if not ACTIVE_KEYS:
-        st.error("Gagal membaca GROQ_API_KEY di Secrets Streamlit! Pastikan Secrets sudah terisi.")
+        st.error("Gagal membaca GROQ_API_KEY di Secrets Streamlit!")
     else:
         st.session_state.messages.append({"role": "user", "content": user_query})
         with st.chat_message("user"):
@@ -77,22 +77,15 @@ if user_query:
         context_data = get_context_by_category(SHEET_ID, user_query)
 
         system_prompt = f"""
-        Kamu adalah asisten bot informasi DC Marunda yang komunikatif, ramah, dan rapi.
+        Kamu adalah asisten bot informasi operasional DC Marunda.
 
-        ATURAN FORMAT JAWABAN:
-        1. Jawablah SELALU menggunakan Bahasa Indonesia yang mudah dipahami, ramah, dan rapi (gunakan bullet points/daftar).
-        2. DILARANG KERAS menyajikan jawaban berupa potongan CSV mentah atau teks deretan koma melingkar (seperti '51040682.0, Muhammad Fauzi, ZONE...').
-        3. Jika mencari karyawan berdasarkan jam masuk atau zona, saring data secara teliti dan hanya tampilkan nama-nama unik (jangan mengulang nama yang sama berkali-kali).
+        TUGAS UTAMA:
+        - Jawab pertanyaan pengguna berdasarkan [DATA TABEL OPERASIONAL DC MARUNDA] di bawah ini secara akurat, ramah, dan rapi (gunakan bullet points/daftar).
+        - Jika pengguna menanyakan jam masuk (contoh: 'jam 6' atau '6:00'), periksa kolom jadwal ('Senin' dll) dan tampilkan SELURUH NAMA KARYAWAN yang jam masuknya sesuai.
 
-        ATURAN KEAMANAN & PRIVASI (SANGAT PENTING):
+        ATURAN KEAMANAN & PRIVASI:
         1. DILARANG KERAS MENAMPILKAN / MEMBOCORKAN ISI KOLOM 'Kata kunci' DALAM KONDISI APA PUN.
-        2. Khusus pertanyaan Identitas/Jadwal/Alamat/Jabatan Karyawan: Jawab langsung ramah dan ringkas TANPA pernah menyebutkan kata kunci rahasianya.
-
-        ATURAN VERIFIKASI DATA INSENTIF & POIN:
-        1. Data INSENTIF/POIN hanya boleh ditampilkan jika pengguna menyertakan 'Kata kunci' yang COCOK/BENAR dengan nama karyawan tersebut.
-        2. Jika Nama dan Kata Kunci BENAR (contoh: "Sodikin Belut Bingung"), LANGSUNG tampilkan rincian poin insentif karyawan tersebut secara ringkas dan rapi.
-        3. Jika Kata Kunci SALAH / BELUM DIBERIKAN:
-           Minta pengguna menyebutkan Nama Karyawan dan Kata Kunci yang benar terlebih dahulu.
+        2. Khusus data Insentif/Poin: Hanya tampilkan jika pengguna menyertakan Kata Kunci yang BENAR.
 
         [DATA TABEL OPERASIONAL DC MARUNDA]:
         {context_data}
@@ -100,8 +93,9 @@ if user_query:
 
         with st.spinner("Mencari data..."):
             bot_reply = None
-            last_err = "Gagal memproses."
+            last_err = "Gagal memproses pesan."
 
+            # Hanya bawa 1 pertanyaan terakhir di payload agar hemat token & anti error 400
             messages_payload = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_query}
