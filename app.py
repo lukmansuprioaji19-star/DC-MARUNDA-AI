@@ -6,15 +6,14 @@ from groq import Groq
 st.set_page_config(page_title="Bot Informasi DC Marunda", page_icon="🤖")
 st.title("🤖 Bot Informasi DC Marunda")
 
-# 2. Ambil Semua Kemungkinan API Key dari Secrets Streamlit (Otomatis & Fleksibel)
+# 2. Ambil Semua API Key dari Secrets Streamlit (Otomatis & Fleksibel)
 raw_keys = [
     st.secrets.get("GROQ_API_KEY", ""),
     st.secrets.get("GROQ_API_KEY_1", ""),
     st.secrets.get("GROQ_API_KEY_2", ""),
     st.secrets.get("GROQ_API_KEY_3", ""),
 ]
-# Saring hanya kunci yang tidak kosong dan tidak duplikat
-ACTIVE_KEYS = list(set([k for k in raw_keys if k]))
+ACTIVE_KEYS = list(dict.fromkeys([k for k in raw_keys if k]))
 
 # 3. ID Google Sheet Operasional DC Marunda
 SHEET_ID = "1pCLPIS2Gi55_hQPTAp8v753TeU6WWPbchAAKGPDg6wE"
@@ -42,6 +41,7 @@ def get_context_by_category(sheet_id, query):
     elif any(k in q for k in ["tcode", "t-code", "code", "sap"]):
         return load_sheet_tab(sheet_id, "T-CODE")
     else:
+        # Default untuk pertanyaan identitas, nama, jadwal, sapaan
         return load_sheet_tab(sheet_id, "INDENTITAS")
 
 # 4. Inisialisasi Riwayat Chat
@@ -65,7 +65,7 @@ user_query = st.chat_input("Ketik pertanyaan Anda di sini...")
 
 if user_query:
     if not ACTIVE_KEYS:
-        st.error("Gagal membaca GROQ_API_KEY di Secrets Streamlit! Pastikan format di Secrets sudah benar.")
+        st.error("Gagal membaca GROQ_API_KEY di Secrets Streamlit! Pastikan Secrets sudah terisi.")
     else:
         st.session_state.messages.append({"role": "user", "content": user_query})
         with st.chat_message("user"):
@@ -92,34 +92,24 @@ if user_query:
 
         with st.spinner("Mencari data..."):
             bot_reply = None
-            last_err = ""
+            last_err = "Tidak ada merespons."
 
             messages_payload = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_query}
             ]
 
+            # Coba rotasi API Key satu per satu menggunakan model Llama 3.1 8B Instant yang super stabil
             for api_key in ACTIVE_KEYS:
                 try:
                     client = Groq(api_key=api_key)
-                    models_list = client.models.list().data
-                    valid_models = [m.id for m in models_list if "llama" in m.id.lower() and "guard" not in m.id.lower()]
-                    
-                    for model_name in valid_models:
-                        try:
-                            completion = client.chat.completions.create(
-                                model=model_name,
-                                messages=messages_payload,
-                                temperature=0.1,
-                                max_tokens=600
-                            )
-                            bot_reply = completion.choices[0].message.content
-                            if bot_reply:
-                                break
-                        except Exception as m_err:
-                            last_err = str(m_err)
-                            continue
-                    
+                    completion = client.chat.completions.create(
+                        model="llama-3.1-8b-instant",
+                        messages=messages_payload,
+                        temperature=0.1,
+                        max_tokens=600
+                    )
+                    bot_reply = completion.choices[0].message.content
                     if bot_reply:
                         break
                 except Exception as err:
