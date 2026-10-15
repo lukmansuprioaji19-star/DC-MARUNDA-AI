@@ -13,39 +13,22 @@ GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", "")
 SHEET_ID = "1pCLPIS2Gi55_hQPTAp8v753TeU6WWPbchAAKGPDg6wE"
 
 @st.cache_data(ttl=60)
-def load_sheet_tab(sheet_id, tab_name):
-    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={tab_name}"
-    try:
-        df = pd.read_csv(url)
-        df = df.dropna(how="all").dropna(how="all", axis=1)
-        if not df.empty:
-            return f"\n--- TAB: {tab_name} ---\n" + df.to_csv(index=False)
-    except Exception:
-        pass
-    return ""
+def load_all_sheets(sheet_id):
+    tab_names = ["INDENTITAS", "INSENTIF", "KPI", "PENCAPAIAN", "T-CODE"]
+    all_context = ""
+    for tab in tab_names:
+        url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={tab}"
+        try:
+            df = pd.read_csv(url)
+            df = df.dropna(how="all").dropna(how="all", axis=1)
+            if not df.empty:
+                all_context += f"\n\n--- TAB SHEET: {tab} ---\n"
+                all_context += df.to_csv(index=False)
+        except Exception:
+            continue
+    return all_context
 
-def get_smart_context(sheet_id, query):
-    q = query.lower()
-    tabs = []
-    if any(k in q for k in ["insentif", "poin", "point", "absen", "hewan"]):
-        tabs.append("INSENTIF")
-    if any(k in q for k in ["nik", "nama", "jabatan", "identitas", "job"]):
-        tabs.append("INDENTITAS")
-    if any(k in q for k in ["kpi", "whu", "ofr"]):
-        tabs.append("KPI")
-    if any(k in q for k in ["pencapaian", "box", "pcs", "lead time"]):
-        tabs.append("PENCAPAIAN")
-    if any(k in q for k in ["tcode", "t-code", "code"]):
-        tabs.append("T-CODE")
-    
-    # Jika pertanyaan umum/sapaan, hanya muat tab INDENTITAS biar hemat token
-    if not tabs:
-        tabs = ["INDENTITAS"]
-
-    context = ""
-    for tab in tabs:
-        context += load_sheet_tab(sheet_id, tab)
-    return context
+context_data = load_all_sheets(SHEET_ID)
 
 # 4. Inisialisasi Riwayat Chat
 if "messages" not in st.session_state:
@@ -66,27 +49,10 @@ if user_query:
         with st.chat_message("user"):
             st.markdown(user_query)
 
-        context_data = get_smart_context(SHEET_ID, user_query)
-
         system_prompt = f"""
-        Kamu adalah asisten bot informasi DC Marunda.
-
-        ATURAN KEAMANAN & RAHASIA DATA INSENTIF (SANGAT PENTING):
-        1. Khusus untuk pertanyaan mengenai data INSENTIF karyawan:
-           - Kamu HARUS memeriksa apakah pengguna telah menyertakan kata kunci "Hewan Lucu" yang sesuai untuk nama karyawan tersebut (data terdapat pada kolom 'Hewan Lucu' di tab INSENTIF).
-           - Jika pengguna BELUM menyebutkan kata kunci "Hewan Lucu" atau kata kuncinya SALAH/TIDAK COCOK dengan nama karyawan yang ditanyakan:
-             Sampaikan dengan sopan bahwa data insentif bersifat rahasia dan minta pengguna menyebutkan kata kunci/Hewan Lucu yang benar terlebih dahulu.
-           - Jika pengguna SUDAH menyebutkan kata kunci "Hewan Lucu" yang BENAR dan cocok dengan nama karyawannya:
-             Tampilkan rincian insentif secara lengkap.
-
-        2. FORMAT TAMPILAN JAWABAN INSENTIF:
-           Tampilkan rincian data insentif secara menurun (list/bullet points) yang rapi, contoh:
-           Insentif [Nama Karyawan] per tanggal [Tanggal]:
-           - Point Absen: [Point] - Rp [Nominal]
-           - Point Daily PI: [Point] - Rp [Nominal]
-           - [Komponen insentif lain yang ada nilainya]
-
-        3. Untuk pertanyaan umum (seperti Jabatan, NIK, KPI, Pencapaian, T-Code), kamu boleh menjawab langsung tanpa perlu kata kunci, kecuali jika pengguna menanyakan data insentif.
+        Kamu adalah asisten bot informasi DC Marunda. 
+        Jawab pertanyaan pengguna secara ramah, akurat, dan langsung berdasarkan data 5 tab tabel berikut.
+        Jika nama atau informasi tidak ada dalam data, jawab dengan sopan bahwa data tidak ditemukan.
 
         [DATA TABEL OPERASIONAL DC MARUNDA]:
         {context_data}
@@ -96,38 +62,20 @@ if user_query:
             try:
                 client = Groq(api_key=GROQ_API_KEY)
                 
-                # Model resmi Groq aktif 2026
-                models_to_try = [
-                    "llama-3.1-8b-instant",
-                    "meta-llama/llama-4-scout-17b-16e-instruct"
-                ]
+                completion = client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_query}
+                    ],
+                    temperature=0.2
+                )
                 
-                bot_reply = None
-                last_err = ""
-
-                for m in models_to_try:
-                    try:
-                        completion = client.chat.completions.create(
-                            model=m,
-                            messages=[
-                                {"role": "system", "content": system_prompt},
-                                {"role": "user", "content": user_query}
-                            ],
-                            temperature=0.2
-                        )
-                        bot_reply = completion.choices[0].message.content
-                        if bot_reply:
-                            break
-                    except Exception as err:
-                        last_err = str(err)
-                        continue
-
-                if bot_reply:
-                    with st.chat_message("assistant"):
-                        st.markdown(bot_reply)
-                    st.session_state.messages.append({"role": "assistant", "content": bot_reply})
-                else:
-                    st.error(f"Gagal memproses pesan: {last_err}")
+                bot_reply = completion.choices[0].message.content
+                
+                with st.chat_message("assistant"):
+                    st.markdown(bot_reply)
+                st.session_state.messages.append({"role": "assistant", "content": bot_reply})
                 
             except Exception as e:
                 st.error(f"Gagal memproses pesan: {str(e)}")
