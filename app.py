@@ -6,7 +6,7 @@ from groq import Groq
 st.set_page_config(page_title="Bot Informasi DC Marunda", page_icon="🤖")
 st.title("🤖 Bot Informasi DC Marunda")
 
-# 2. Ambil API Key Groq dari Secrets
+# 2. Ambil API Key Groq dari Secrets Streamlit
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", "")
 
 # 3. ID GOOGLE SHEET DC MARUNDA AI (5 TAB)
@@ -29,7 +29,7 @@ def load_all_sheets(sheet_id):
 
 context_data = load_all_sheets(SHEET_ID)
 
-# 4. Chat History
+# 4. Simpan Riwayat Chat (Chat History)
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
@@ -37,7 +37,7 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# 5. Eksekusi Pertanyaan Menggunakan Groq Llama 3.3
+# 5. Eksekusi Pertanyaan Pengguna
 user_query = st.chat_input("Tanyakan jadwal, nama karyawan, atau informasi DC Marunda...")
 
 if user_query:
@@ -61,9 +61,8 @@ if user_query:
             try:
                 client = Groq(api_key=GROQ_API_KEY)
                 
-                # Menggunakan Llama 3.3 70B (Gratis & Sangat Pintar)
                 completion = client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
+                    model="llama-3.3-70b-specdec",
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_query}
