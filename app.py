@@ -12,7 +12,6 @@ API_KEYS = [
     st.secrets.get("GROQ_API_KEY_2", ""),
     st.secrets.get("GROQ_API_KEY_3", ""),
 ]
-# Filter key yang tidak kosong
 ACTIVE_KEYS = [k for k in API_KEYS if k]
 
 # 3. ID Google Sheet Operasional DC Marunda
@@ -32,14 +31,13 @@ def load_sheet_tab(sheet_id, tab_name):
 
 def get_context_by_category(sheet_id, query):
     q = query.lower()
-    
-    # Cek apakah user mengetikkan angka 1-5 di awal pesan
     first_char = query.strip()[0] if query.strip() else ""
     
-    if first_char == "1" or any(k in q for k in ["identitas", "jadwal", "alamat", "nik", "nama", "jabatan"]):
-        return load_sheet_tab(sheet_id, "INDENTITAS")
-    elif first_char == "2" or any(k in q for k in ["insentif", "poin", "point", "absen", "kata kunci"]):
+    # Deteksi fleksibel: Angka 2 ATAU mengandung kata insentif/poin/2 kata (kemungkinan nama + kata kunci)
+    if first_char == "2" or any(k in q for k in ["insentif", "poin", "point", "absen", "kata kunci"]):
         return load_sheet_tab(sheet_id, "INSENTIF")
+    elif first_char == "1" or any(k in q for k in ["identitas", "jadwal", "alamat", "nik", "nama", "jabatan"]):
+        return load_sheet_tab(sheet_id, "INDENTITAS")
     elif first_char == "3" or any(k in q for k in ["kpi", "whu", "ofr"]):
         return load_sheet_tab(sheet_id, "KPI")
     elif first_char == "4" or any(k in q for k in ["pencapaian", "box", "pcs", "lead time"]):
@@ -47,13 +45,13 @@ def get_context_by_category(sheet_id, query):
     elif first_char == "5" or any(k in q for k in ["tcode", "t-code", "code", "sap"]):
         return load_sheet_tab(sheet_id, "T-CODE")
     else:
-        # Default jika pertanyaan umum
-        return load_sheet_tab(sheet_id, "INDENTITAS")
+        # Jika user mengetik nama + kata kunci langsung tanpa angka (misal: "Sodikin Belut Bingung")
+        # Muat tab INSENTIF & INDENTITAS bersamaan agar pasti ketemu
+        return load_sheet_tab(sheet_id, "INSENTIF") + "\n" + load_sheet_tab(sheet_id, "INDENTITAS")
 
 # 4. Inisialisasi Riwayat Chat & Tampilan Menu Awal
 if "messages" not in st.session_state:
     st.session_state.messages = []
-    # Pesan Sapaan & Menu Pilihan Pertama Kali
     welcome_text = """
 👋 **Selamat Datang di Bot Informasi DC Marunda!**
 
@@ -64,9 +62,9 @@ Silakan pilih kategori informasi yang ingin Anda tanyakan:
 * **[4]** Pencapaian Produktivitas Karyawan
 * **[5]** T-Code SAP HANA
 
-*Contoh pertanyaan:*
-- Ketik **1** lalu tanyakan *"Jadwal atau Alamat Herry Irawan"*
-- Ketik **2** lalu tanyakan *"Insentif Sodikin kata kunci Belut Bingung"*
+*Contoh cara menanyakan Insentif:*
+- Ketik **2 Sodikin Belut Bingung**
+- Atau langsung ketik **Sodikin Belut Bingung**
     """
     st.session_state.messages.append({"role": "assistant", "content": welcome_text})
 
@@ -85,7 +83,6 @@ if user_query:
         with st.chat_message("user"):
             st.markdown(user_query)
 
-        # Muat HANYA 1 TAB SHEET sesuai kategori menu (Hemat Token 90%!)
         context_data = get_context_by_category(SHEET_ID, user_query)
 
         system_prompt = f"""
@@ -93,11 +90,11 @@ if user_query:
 
         ATURAN KEAMANAN & PRIVASI (SANGAT PENTING):
         1. DILARANG KERAS MENAMPILKAN / MEMBOCORKAN ISI KOLOM 'Kata kunci' DALAM KONDISI APA PUN, TERMASUK SAAT USER MENANYAKAN IDENTITAS KARYAWAN.
-        2. Khusus pertanyaan Menu 1 (Identitas, Jadwal, Alamat): Jawab langsung TANPA pernah menyebutkan kata kunci rahasianya.
+        2. Khusus pertanyaan Identitas/Jadwal/Alamat: Jawab langsung TANPA pernah menyebutkan kata kunci rahasianya.
 
-        ATURAN VERIFIKASI DATA INSENTIF & POIN (MENU 2):
-        1. Data INSENTIF/POIN di kolom 'Total Poin' hanya boleh ditampilkan jika pengguna menyebutkan 'Kata kunci' yang COCOK/BENAR dengan nama karyawan tersebut.
-        2. Jika pengguna menyebutkan Kata Kunci yang BENAR, LANGSUNG tampilkan seluruh isi teks rincian poin insentif karyawan tersebut secara rapi dan utuh (menurun).
+        ATURAN VERIFIKASI DATA INSENTIF & POIN:
+        1. Data INSENTIF/POIN di kolom 'Total Poin' hanya boleh ditampilkan jika pengguna menyertakan 'Kata kunci' yang COCOK/BENAR dengan nama karyawan tersebut.
+        2. Jika pengguna menyebutkan Nama dan Kata Kunci yang BENAR (contoh: "Sodikin Belut Bingung"), LANGSUNG tampilkan seluruh isi teks rincian poin insentif karyawan tersebut secara rapi dan utuh (menurun).
         3. Jika Kata Kunci SALAH / BELUM DIBERIKAN oleh pengguna:
            Sampaikan dengan sopan bahwa data insentif bersifat rahasia dan minta pengguna menyebutkan Nama Karyawan dan Kata Kunci yang benar.
 
@@ -109,16 +106,12 @@ if user_query:
             bot_reply = None
             last_err = ""
 
-            # Rotasi 3 API Key secara bergantian jika ada key yang habis kuota/error
             for api_key in ACTIVE_KEYS:
                 try:
                     client = Groq(api_key=api_key)
-                    
-                    # OTOMATIS AMBIL DAFTAR MODEL YANG BENAR-BENAR AKTIF DI AKUN TERSEBUT
                     available_models = [m.id for m in client.models.list().data]
                     
                     for model_name in available_models:
-                        # Prioritaskan model Llama, Qwen, atau Mixtral yang tersedia
                         if any(brand in model_name.lower() for brand in ["llama", "qwen", "mixtral", "gemma"]):
                             try:
                                 completion = client.chat.completions.create(
@@ -137,7 +130,7 @@ if user_query:
                                 continue
                     
                     if bot_reply:
-                        break # Berhasil dapat jawaban, hentikan loop key
+                        break
                 except Exception as err:
                     last_err = str(err)
                     continue
