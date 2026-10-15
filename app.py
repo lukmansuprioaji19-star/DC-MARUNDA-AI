@@ -6,7 +6,7 @@ from groq import Groq
 st.set_page_config(page_title="Bot Informasi DC Marunda", page_icon="🤖")
 st.title("🤖 Bot Informasi DC Marunda")
 
-# 2. Ambil Semua API Key dari Secrets Streamlit (Otomatis & Fleksibel)
+# 2. Ambil Semua API Key dari Secrets Streamlit
 raw_keys = [
     st.secrets.get("GROQ_API_KEY", ""),
     st.secrets.get("GROQ_API_KEY_1", ""),
@@ -41,7 +41,7 @@ def get_context_by_category(sheet_id, query):
     elif any(k in q for k in ["tcode", "t-code", "code", "sap"]):
         return load_sheet_tab(sheet_id, "T-CODE")
     else:
-        # Default untuk pertanyaan identitas, nama, jadwal, sapaan
+        # Default untuk pertanyaan identitas, nama, jabatan, jadwal, sapaan
         return load_sheet_tab(sheet_id, "INDENTITAS")
 
 # 4. Inisialisasi Riwayat Chat
@@ -51,7 +51,7 @@ if "messages" not in st.session_state:
 👋 **Selamat Datang di Bot Informasi DC Marunda!**
 
 Silakan tanyakan informasi yang Anda butuhkan:
-- **Identitas & Jadwal Kerja**: *"Siapa saja yang masuk jam 6 pagi?"* atau *"Lu tahu Lukman?"*
+- **Identitas & Jadwal Kerja**: *"Sodikin jabatannya apa?"* atau *"Siapa saja yang masuk jam 6 pagi?"*
 - **Cek Insentif**: *"Sodikin Belut Bingung"* (Memerlukan Kata Kunci)
     """
     st.session_state.messages.append({"role": "assistant", "content": welcome_text})
@@ -78,11 +78,11 @@ if user_query:
 
         ATURAN KEAMANAN & PRIVASI (SANGAT PENTING):
         1. DILARANG KERAS MENAMPILKAN / MEMBOCORKAN ISI KOLOM 'Kata kunci' DALAM KONDISI APA PUN.
-        2. Khusus pertanyaan Identitas/Jadwal/Alamat/Pertanyaan Nama Karyawan: Jawab langsung ramah dan ringkas TANPA pernah menyebutkan kata kunci rahasianya.
+        2. Khusus pertanyaan Identitas/Jadwal/Alamat/Jabatan Karyawan: Jawab langsung ramah dan ringkas TANPA pernah menyebutkan kata kunci rahasianya.
 
         ATURAN VERIFIKASI DATA INSENTIF & POIN:
         1. Data INSENTIF/POIN hanya boleh ditampilkan jika pengguna menyertakan 'Kata kunci' yang COCOK/BENAR dengan nama karyawan tersebut.
-        2. Jika Nama dan Kata Kunci BENAR (contoh: "Sodikin Belut Bingung"), LANGSUNG tampilkan rincian poin insentif karyawan tersebut secara ringkas dan rapi (list menurun).
+        2. Jika Nama dan Kata Kunci BENAR (contoh: "Sodikin Belut Bingung"), LANGSUNG tampilkan rincian poin insentif karyawan tersebut secara ringkas dan rapi.
         3. Jika Kata Kunci SALAH / BELUM DIBERIKAN:
            Minta pengguna menyebutkan Nama Karyawan dan Kata Kunci yang benar terlebih dahulu.
 
@@ -92,24 +92,38 @@ if user_query:
 
         with st.spinner("Mencari data..."):
             bot_reply = None
-            last_err = "Tidak ada merespons."
+            last_err = "Gagal memproses."
 
             messages_payload = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_query}
             ]
 
-            # Coba rotasi API Key satu per satu menggunakan model Llama 3.1 8B Instant yang super stabil
+            # Daftar cadangan model Llama aktif resmi dari Groq
+            MODELS_TO_TRY = [
+                "llama-3.3-70b-versatile",
+                "llama3-8b-8192",
+                "llama3-70b-8192"
+            ]
+
             for api_key in ACTIVE_KEYS:
                 try:
                     client = Groq(api_key=api_key)
-                    completion = client.chat.completions.create(
-                        model="llama-3.1-8b-instant",
-                        messages=messages_payload,
-                        temperature=0.1,
-                        max_tokens=600
-                    )
-                    bot_reply = completion.choices[0].message.content
+                    for model_name in MODELS_TO_TRY:
+                        try:
+                            completion = client.chat.completions.create(
+                                model=model_name,
+                                messages=messages_payload,
+                                temperature=0.1,
+                                max_tokens=500
+                            )
+                            bot_reply = completion.choices[0].message.content
+                            if bot_reply:
+                                break
+                        except Exception as m_err:
+                            last_err = str(m_err)
+                            continue
+                    
                     if bot_reply:
                         break
                 except Exception as err:
