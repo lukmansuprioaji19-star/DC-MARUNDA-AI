@@ -1,16 +1,13 @@
 import streamlit as st
 import pandas as pd
-import google.generativeai as genai
-import random
-import time
+from groq import Groq
 
 # 1. Konfigurasi Halaman Web
 st.set_page_config(page_title="Bot Informasi DC Marunda", page_icon="🤖")
 st.title("🤖 Bot Informasi DC Marunda")
 
-# 2. Ambil Daftar API Key (Bisa Single atau Multiple dipisah koma)
-RAW_KEYS = st.secrets.get("GEMINI_API_KEYS", st.secrets.get("GEMINI_API_KEY", ""))
-API_KEYS = [k.strip() for k in RAW_KEYS.split(",") if k.strip()]
+# 2. Ambil API Key Groq dari Secrets
+GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", "")
 
 # 3. ID GOOGLE SHEET DC MARUNDA AI (5 TAB)
 SHEET_ID = "1pCLPIS2Gi55_hQPTAp8v753TeU6WWPbchAAKGPDg6wE"
@@ -40,57 +37,45 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# 5. Eksekusi Pertanyaan (Model Resmi Aktif: gemini-3.8-flash)
+# 5. Eksekusi Pertanyaan Menggunakan Groq Llama 3.3
 user_query = st.chat_input("Tanyakan jadwal, nama karyawan, atau informasi DC Marunda...")
 
 if user_query:
-    if not API_KEYS:
-        st.error("API Key belum diset di Secrets Streamlit!")
+    if not GROQ_API_KEY:
+        st.error("GROQ_API_KEY belum diset di Secrets Streamlit!")
     else:
         st.session_state.messages.append({"role": "user", "content": user_query})
         with st.chat_message("user"):
             st.markdown(user_query)
 
-        prompt = f"""
+        system_prompt = f"""
         Kamu adalah asisten bot informasi DC Marunda. 
         Jawab pertanyaan pengguna secara ramah, akurat, dan langsung berdasarkan data 5 tab tabel berikut.
         Jika nama atau informasi tidak ada dalam data, jawab dengan sopan bahwa data tidak ditemukan.
 
         [DATA TABEL OPERASIONAL DC MARUNDA]:
         {context_data}
-
-        [PERTANYAAN PENGGUNA]:
-        {user_query}
         """
 
         with st.spinner("Mencari data..."):
-            bot_reply = None
-            last_error = ""
-
-            # Acak urutan API Key agar beban terbagi adil
-            shuffled_keys = API_KEYS.copy()
-            random.shuffle(shuffled_keys)
-
-            for current_key in shuffled_keys:
-                try:
-                    genai.configure(api_key=current_key)
-                    
-                    # Wajib menggunakan nama model resmi aktif
-                    model = genai.GenerativeModel("gemini-3.8-flash")
-                    
-                    response = model.generate_content(prompt)
-                    if response and response.text:
-                        bot_reply = response.text
-                        break  # Sukses dapat jawaban, hentikan pencarian!
-                        
-                except Exception as e:
-                    last_error = str(e)
-                    # Jika kena Limit (429) atau Server Sibuk (503), lompati dan coba Key berikutnya di Project lain!
-                    continue
-
-            if bot_reply:
+            try:
+                client = Groq(api_key=GROQ_API_KEY)
+                
+                # Menggunakan Llama 3.3 70B (Gratis & Sangat Pintar)
+                completion = client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_query}
+                    ],
+                    temperature=0.2
+                )
+                
+                bot_reply = completion.choices[0].message.content
+                
                 with st.chat_message("assistant"):
                     st.markdown(bot_reply)
                 st.session_state.messages.append({"role": "assistant", "content": bot_reply})
-            else:
-                st.error(f"Gagal memproses pesan. Semua API key sedang penuh/limit. Detail: {last_error}")
+                
+            except Exception as e:
+                st.error(f"Gagal memproses pesan: {str(e)}")
