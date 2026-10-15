@@ -26,7 +26,6 @@ def load_sheet_tab(sheet_id, tab_name):
 
 def get_smart_context(sheet_id, query):
     q = query.lower()
-    # Pilih tab yang relevan saja agar hemat token & tidak merusak limit
     tabs = []
     if any(k in q for k in ["insentif", "poin", "point", "absen", "hewan"]):
         tabs.append("INSENTIF")
@@ -39,7 +38,6 @@ def get_smart_context(sheet_id, query):
     if any(k in q for k in ["tcode", "t-code", "code"]):
         tabs.append("T-CODE")
     
-    # Jika sapaan umum / tidak spesifik, default muat tab INDENTITAS & INSENTIF
     if not tabs:
         tabs = ["INDENTITAS", "INSENTIF"]
 
@@ -67,7 +65,6 @@ if user_query:
         with st.chat_message("user"):
             st.markdown(user_query)
 
-        # Muat konteks data yang sudah di-filter (super hemat token)
         context_data = get_smart_context(SHEET_ID, user_query)
 
         system_prompt = f"""
@@ -98,21 +95,40 @@ if user_query:
             try:
                 client = Groq(api_key=GROQ_API_KEY)
                 
-                # Model Llama 3.1 8B Instant (Ringan, Kencang, dan Selalu Aktif)
-                completion = client.chat.completions.create(
-                    model="llama-3.1-8b-instant",
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_query}
-                    ],
-                    temperature=0.2
-                )
+                # Coba urutan ID model alternatif di Groq
+                models_to_try = [
+                    "llama-3.1-8b-instant",
+                    "llama3-8b-8192",
+                    "qwen/qwen3.8-27b",
+                    "openai/gpt-oss-20b"
+                ]
                 
-                bot_reply = completion.choices[0].message.content
-                
-                with st.chat_message("assistant"):
-                    st.markdown(bot_reply)
-                st.session_state.messages.append({"role": "assistant", "content": bot_reply})
+                bot_reply = None
+                last_err = ""
+
+                for m in models_to_try:
+                    try:
+                        completion = client.chat.completions.create(
+                            model=m,
+                            messages=[
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": user_query}
+                            ],
+                            temperature=0.2
+                        )
+                        bot_reply = completion.choices[0].message.content
+                        if bot_reply:
+                            break
+                    except Exception as err:
+                        last_err = str(err)
+                        continue
+
+                if bot_reply:
+                    with st.chat_message("assistant"):
+                        st.markdown(bot_reply)
+                    st.session_state.messages.append({"role": "assistant", "content": bot_reply})
+                else:
+                    st.error(f"Gagal memproses. Detail error: {last_err}")
                 
             except Exception as e:
                 st.error(f"Gagal memproses pesan: {str(e)}")
