@@ -41,7 +41,6 @@ def get_context_by_category(sheet_id, query):
     elif any(k in q for k in ["tcode", "t-code", "code", "sap"]):
         return load_sheet_tab(sheet_id, "T-CODE")
     else:
-        # Default untuk pertanyaan identitas, nama, jabatan, jadwal, sapaan
         return load_sheet_tab(sheet_id, "INDENTITAS")
 
 # 4. Inisialisasi Riwayat Chat
@@ -99,17 +98,20 @@ if user_query:
                 {"role": "user", "content": user_query}
             ]
 
-            # Daftar cadangan model Llama aktif resmi dari Groq
-            MODELS_TO_TRY = [
-                "llama-3.3-70b-versatile",
-                "llama3-8b-8192",
-                "llama3-70b-8192"
-            ]
-
             for api_key in ACTIVE_KEYS:
                 try:
                     client = Groq(api_key=api_key)
-                    for model_name in MODELS_TO_TRY:
+                    
+                    # Dapatkan daftar model aktif dari server Groq
+                    try:
+                        active_models = [m.id for m in client.models.list().data if "llama" in m.id.lower() and "guard" not in m.id.lower()]
+                    except Exception:
+                        active_models = ["llama-3.3-70b-versatile"]
+
+                    if not active_models:
+                        active_models = ["llama-3.3-70b-versatile"]
+
+                    for model_name in active_models:
                         try:
                             completion = client.chat.completions.create(
                                 model=model_name,
