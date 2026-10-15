@@ -2,14 +2,14 @@ import streamlit as st
 import pandas as pd
 from groq import Groq
 
-# 1. Konfigurasi Halaman Web
+# 1. Konfigurasi Halaman Web Streamlit
 st.set_page_config(page_title="Bot Informasi DC Marunda", page_icon="🤖")
 st.title("🤖 Bot Informasi DC Marunda")
 
 # 2. Ambil API Key Groq dari Secrets Streamlit
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", "")
 
-# 3. ID GOOGLE SHEET DC MARUNDA AI (5 TAB)
+# 3. ID Google Sheet Operasional DC Marunda
 SHEET_ID = "1pCLPIS2Gi55_hQPTAp8v753TeU6WWPbchAAKGPDg6wE"
 
 @st.cache_data(ttl=60)
@@ -29,21 +29,23 @@ def load_all_sheets(sheet_id):
 
 context_data = load_all_sheets(SHEET_ID)
 
-# 4. Simpan Riwayat Chat (Chat History)
+# 4. Inisialisasi Riwayat Chat
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# Tampilkan seluruh riwayat percakapan di layar
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# 5. Eksekusi Pertanyaan Pengguna
+# 5. Input Pertanyaan Pengguna
 user_query = st.chat_input("Tanyakan jadwal, nama karyawan, atau informasi DC Marunda...")
 
 if user_query:
     if not GROQ_API_KEY:
         st.error("GROQ_API_KEY belum diset di Secrets Streamlit!")
     else:
+        # Tampilkan pertanyaan pengguna
         st.session_state.messages.append({"role": "user", "content": user_query})
         with st.chat_message("user"):
             st.markdown(user_query)
@@ -61,20 +63,41 @@ if user_query:
             try:
                 client = Groq(api_key=GROQ_API_KEY)
                 
-                completion = client.chat.completions.create(
-                    model="llama-3.3-70b-specdec",
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_query}
-                    ],
-                    temperature=0.2
-                )
+                # Daftar model aktif Groq (Diurutkan dari model terbaik)
+                models_to_try = [
+                    "openai/gpt-oss-120b",
+                    "llama-3.1-8b-instant",
+                    "openai/gpt-oss-20b",
+                    "qwen/qwen3.8-27b"
+                ]
                 
-                bot_reply = completion.choices[0].message.content
-                
-                with st.chat_message("assistant"):
-                    st.markdown(bot_reply)
-                st.session_state.messages.append({"role": "assistant", "content": bot_reply})
-                
+                bot_reply = None
+                last_error = ""
+
+                # Coba setiap model sampai menemukan yang berhasil merespons
+                for model_name in models_to_try:
+                    try:
+                        completion = client.chat.completions.create(
+                            model=model_name,
+                            messages=[
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": user_query}
+                            ],
+                            temperature=0.2
+                        )
+                        bot_reply = completion.choices[0].message.content
+                        if bot_reply:
+                            break
+                    except Exception as e:
+                        last_error = str(e)
+                        continue
+
+                if bot_reply:
+                    with st.chat_message("assistant"):
+                        st.markdown(bot_reply)
+                    st.session_state.messages.append({"role": "assistant", "content": bot_reply})
+                else:
+                    st.error(f"Gagal memproses pesan dari seluruh model Groq. Detail: {last_error}")
+
             except Exception as e:
                 st.error(f"Gagal memproses pesan: {str(e)}")
