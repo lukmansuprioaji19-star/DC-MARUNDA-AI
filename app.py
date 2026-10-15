@@ -2,19 +2,12 @@ import streamlit as st
 import pandas as pd
 from groq import Groq
 
-# 1. Konfigurasi Halaman Web Streamlit
 st.set_page_config(page_title="Bot Informasi DC Marunda", page_icon="🤖")
 st.title("🤖 Bot Informasi DC Marunda")
 
-# 2. Ambil Daftar API Key untuk Fitur Rotation (3 Akun)
-API_KEYS = [
-    st.secrets.get("GROQ_API_KEY_1", ""),
-    st.secrets.get("GROQ_API_KEY_2", ""),
-    st.secrets.get("GROQ_API_KEY_3", ""),
-]
-ACTIVE_KEYS = [k for k in API_KEYS if k]
+# MENGAMBIL API KEY UTAMA (Sesuai Secrets kamu)
+GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", "")
 
-# 3. ID Google Sheet Operasional DC Marunda
 SHEET_ID = "1pCLPIS2Gi55_hQPTAp8v753TeU6WWPbchAAKGPDg6wE"
 
 @st.cache_data(ttl=60)
@@ -31,24 +24,17 @@ def load_sheet_tab(sheet_id, tab_name):
 
 def get_context_by_category(sheet_id, query):
     q = query.lower()
-    
-    # Deteksi kategori Insentif
     if any(k in q for k in ["insentif", "poin", "point", "kata kunci"]):
         return load_sheet_tab(sheet_id, "INSENTIF")
-    # Kategori KPI
     elif any(k in q for k in ["kpi", "whu", "ofr"]):
         return load_sheet_tab(sheet_id, "KPI")
-    # Kategori Pencapaian
     elif any(k in q for k in ["pencapaian", "box", "pcs", "lead time"]):
         return load_sheet_tab(sheet_id, "PENCAPAIAN")
-    # Kategori T-Code
     elif any(k in q for k in ["tcode", "t-code", "code", "sap"]):
         return load_sheet_tab(sheet_id, "T-CODE")
     else:
-        # Default untuk pertanyaan nama/sapaan/identitas/jam kerja
         return load_sheet_tab(sheet_id, "INDENTITAS")
 
-# 4. Inisialisasi Riwayat Chat
 if "messages" not in st.session_state:
     st.session_state.messages = []
     welcome_text = """
@@ -64,12 +50,11 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# 5. Input Pertanyaan Pengguna
 user_query = st.chat_input("Ketik pertanyaan Anda di sini...")
 
 if user_query:
-    if not ACTIVE_KEYS:
-        st.error("API Key Groq belum diset di Secrets Streamlit!")
+    if not GROQ_API_KEY:
+        st.error("GROQ_API_KEY belum diset di Secrets Streamlit!")
     else:
         st.session_state.messages.append({"role": "user", "content": user_query})
         with st.chat_message("user"):
@@ -96,52 +81,35 @@ if user_query:
 
         with st.spinner("Mencari data..."):
             bot_reply = None
-            last_err = "Gagal terhubung. Pastikan API Key di Secrets sudah benar."
-
-            messages_payload = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_query}
-            ]
-
-            for api_key in ACTIVE_KEYS:
-                try:
-                    client = Groq(api_key=api_key)
-                    
-                    # 1. OTOMATIS AMBIL SEMUA MODEL AKTIF DI AKUN TERSEBUT
-                    models_list = client.models.list().data
-                    
-                    # 2. FILTER MODEL HANYA KELUARGA LLAMA / GEMMA (ABAIKAN QWEN & GUARD)
-                    valid_models = [
-                        m.id for m in models_list 
-                        if any(b in m.id.lower() for b in ["llama", "gemma"]) 
-                        and "guard" not in m.id.lower()
-                    ]
-                    
-                    # 3. KANTONGI & COBA MODEL SATU PER SATU DENGAN BEBAS ERROR 404
-                    for model_name in valid_models:
-                        try:
-                            completion = client.chat.completions.create(
-                                model=model_name,
-                                messages=messages_payload,
-                                temperature=0.1,
-                                max_tokens=600
-                            )
-                            bot_reply = completion.choices[0].message.content
-                            if bot_reply:
-                                break
-                        except Exception as m_err:
-                            last_err = str(m_err)
-                            continue
-                    
-                    if bot_reply:
-                        break
-                except Exception as err:
-                    last_err = str(err)
-                    continue
+            try:
+                client = Groq(api_key=GROQ_API_KEY)
+                
+                # Ambil daftar model aktif
+                models_list = client.models.list().data
+                valid_models = [m.id for m in models_list if "llama" in m.id.lower() and "guard" not in m.id.lower()]
+                
+                for model_name in valid_models:
+                    try:
+                        completion = client.chat.completions.create(
+                            model=model_name,
+                            messages=[
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": user_query}
+                            ],
+                            temperature=0.1,
+                            max_tokens=600
+                        )
+                        bot_reply = completion.choices[0].message.content
+                        if bot_reply:
+                            break
+                    except Exception:
+                        continue
+            except Exception as e:
+                st.error(f"Error API: {str(e)}")
 
             if bot_reply:
                 with st.chat_message("assistant"):
                     st.markdown(bot_reply)
                 st.session_state.messages.append({"role": "assistant", "content": bot_reply})
             else:
-                st.error(f"Gagal memproses pesan: {last_err}")
+                st.error("Gagal mendapat respon. Coba tekan kirim sekali lagi.")
