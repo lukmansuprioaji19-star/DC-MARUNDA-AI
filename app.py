@@ -20,9 +20,10 @@ def load_all_sheets(sheet_id):
         url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={tab}"
         try:
             df = pd.read_csv(url)
+            df = df.dropna(how="all").dropna(how="all", axis=1)
             if not df.empty:
-                all_context += f"\n\n--- TAB SHEET: {tab} ---\n"
-                all_context += df.to_string(index=False)
+                all_context += f"\n--- TAB: {tab} ---\n"
+                all_context += df.to_csv(index=False)
         except Exception:
             continue
     return all_context
@@ -33,7 +34,6 @@ context_data = load_all_sheets(SHEET_ID)
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Tampilkan seluruh riwayat percakapan di layar
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
@@ -45,15 +45,25 @@ if user_query:
     if not GROQ_API_KEY:
         st.error("GROQ_API_KEY belum diset di Secrets Streamlit!")
     else:
-        # Tampilkan pertanyaan pengguna
         st.session_state.messages.append({"role": "user", "content": user_query})
         with st.chat_message("user"):
             st.markdown(user_query)
 
         system_prompt = f"""
-        Kamu adalah asisten bot informasi DC Marunda. 
-        Jawab pertanyaan pengguna secara ramah, akurat, dan langsung berdasarkan data 5 tab tabel berikut.
-        Jika nama atau informasi tidak ada dalam data, jawab dengan sopan bahwa data tidak ditemukan.
+        Kamu adalah asisten bot informasi DC Marunda.
+
+        ATURAN KEAMANAN & RAHASIA DATA INSENTIF (SANGAT PENTING):
+        1. Khusus untuk pertanyaan mengenai data INSENTIF karyawan:
+           - Kamu HARUS memeriksa apakah pengguna telah menyertakan kata kunci "Hewan Lucu" yang sesuai untuk nama karyawan tersebut (data terdapat pada kolom 'Hewan Lucu' di tab INSENTIF).
+           - Jika pengguna BELUM menyebutkan kata kunci "Hewan Lucu" atau kata kuncinya SALAH/TIDAK COCOK dengan nama karyawan yang ditanyakan:
+             Sampaikan dengan sopan bahwa data insentif bersifat rahasia dan minta pengguna menyebutkan kata kunci/Hewan Lucu yang benar terlebih dahulu.
+           - Jika pengguna SUDAH menyebutkan kata kunci "Hewan Lucu" yang BENAR dan cocok dengan nama karyawannya:
+             Tampilkan rincian insentif secara lengkap.
+
+        2. FORMAT TAMPILAN JAWABAN INSENTIF:
+           Tampilkan rincian data insentif secara menurun (list/bullet points) yang rapi.
+
+        3. Untuk pertanyaan umum (seperti Jabatan, NIK, KPI, Pencapaian, T-Code), kamu boleh menjawab langsung tanpa perlu kata kunci.
 
         [DATA TABEL OPERASIONAL DC MARUNDA]:
         {context_data}
@@ -63,19 +73,16 @@ if user_query:
             try:
                 client = Groq(api_key=GROQ_API_KEY)
                 
-                # Daftar model aktif Groq (Diurutkan dari model terbaik)
-                models_to_try = [
-                    "openai/gpt-oss-120b",
-                    "llama-3.1-8b-instant",
-                    "openai/gpt-oss-20b",
-                    "qwen/qwen3.8-27b"
+                # Daftar nama model resmi dari Groq API
+                valid_models = [
+                    "llama-3.3-70b-versatile",
+                    "llama-3.1-8b-instant"
                 ]
                 
                 bot_reply = None
-                last_error = ""
+                last_err = ""
 
-                # Coba setiap model sampai menemukan yang berhasil merespons
-                for model_name in models_to_try:
+                for model_name in valid_models:
                     try:
                         completion = client.chat.completions.create(
                             model=model_name,
@@ -88,8 +95,8 @@ if user_query:
                         bot_reply = completion.choices[0].message.content
                         if bot_reply:
                             break
-                    except Exception as e:
-                        last_error = str(e)
+                    except Exception as err:
+                        last_err = str(err)
                         continue
 
                 if bot_reply:
@@ -97,7 +104,7 @@ if user_query:
                         st.markdown(bot_reply)
                     st.session_state.messages.append({"role": "assistant", "content": bot_reply})
                 else:
-                    st.error(f"Gagal memproses pesan dari seluruh model Groq. Detail: {last_error}")
-
+                    st.error(f"Gagal memproses pesan. Detail: {last_err}")
+                
             except Exception as e:
                 st.error(f"Gagal memproses pesan: {str(e)}")
