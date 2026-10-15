@@ -31,40 +31,31 @@ def load_sheet_tab(sheet_id, tab_name):
 
 def get_context_by_category(sheet_id, query):
     q = query.lower()
-    first_char = query.strip()[0] if query.strip() else ""
     
-    # Deteksi fleksibel: Angka 2 ATAU mengandung kata insentif/poin/2 kata (kemungkinan nama + kata kunci)
-    if first_char == "2" or any(k in q for k in ["insentif", "poin", "point", "absen", "kata kunci"]):
+    # Ambil tab spesifik saja agar token super hemat
+    if any(k in q for k in ["insentif", "poin", "point", "absen", "kata kunci"]):
         return load_sheet_tab(sheet_id, "INSENTIF")
-    elif first_char == "1" or any(k in q for k in ["identitas", "jadwal", "alamat", "nik", "nama", "jabatan"]):
+    elif any(k in q for k in ["identitas", "jadwal", "alamat", "nik", "nama", "jabatan", "masuk", "jam"]):
         return load_sheet_tab(sheet_id, "INDENTITAS")
-    elif first_char == "3" or any(k in q for k in ["kpi", "whu", "ofr"]):
+    elif any(k in q for k in ["kpi", "whu", "ofr"]):
         return load_sheet_tab(sheet_id, "KPI")
-    elif first_char == "4" or any(k in q for k in ["pencapaian", "box", "pcs", "lead time"]):
+    elif any(k in q for k in ["pencapaian", "box", "pcs", "lead time"]):
         return load_sheet_tab(sheet_id, "PENCAPAIAN")
-    elif first_char == "5" or any(k in q for k in ["tcode", "t-code", "code", "sap"]):
+    elif any(k in q for k in ["tcode", "t-code", "code", "sap"]):
         return load_sheet_tab(sheet_id, "T-CODE")
     else:
-        # Jika user mengetik nama + kata kunci langsung tanpa angka (misal: "Sodikin Belut Bingung")
-        # Muat tab INSENTIF & INDENTITAS bersamaan agar pasti ketemu
-        return load_sheet_tab(sheet_id, "INSENTIF") + "\n" + load_sheet_tab(sheet_id, "INDENTITAS")
+        # Default jika pertanyaan umum, ambil tab INDENTITAS
+        return load_sheet_tab(sheet_id, "INDENTITAS")
 
-# 4. Inisialisasi Riwayat Chat & Tampilan Menu Awal
+# 4. Inisialisasi Riwayat Chat
 if "messages" not in st.session_state:
     st.session_state.messages = []
     welcome_text = """
 👋 **Selamat Datang di Bot Informasi DC Marunda!**
 
-Silakan pilih kategori informasi yang ingin Anda tanyakan:
-* **[1]** Background Kantor & Jadwal / Identitas Karyawan
-* **[2]** Cek Insentif & Poin *(Memerlukan Kata Kunci Rahasia)*
-* **[3]** KPI Gudang Operasional
-* **[4]** Pencapaian Produktivitas Karyawan
-* **[5]** T-Code SAP HANA
-
-*Contoh cara menanyakan Insentif:*
-- Ketik **2 Sodikin Belut Bingung**
-- Atau langsung ketik **Sodikin Belut Bingung**
+Silakan tanyakan informasi yang Anda butuhkan:
+- **Identitas & Jadwal Kerja**: *"Jam berapa Anwar masuk?"* atau *"Alamat Herry"*
+- **Cek Insentif**: *"Sodikin Belut Bingung"* (Memerlukan Kata Kunci)
     """
     st.session_state.messages.append({"role": "assistant", "content": welcome_text})
 
@@ -83,6 +74,7 @@ if user_query:
         with st.chat_message("user"):
             st.markdown(user_query)
 
+        # Muat HANYA 1 TAB SHEET sesuai pertanyaan (Hemat Token!)
         context_data = get_context_by_category(SHEET_ID, user_query)
 
         system_prompt = f"""
@@ -94,7 +86,7 @@ if user_query:
 
         ATURAN VERIFIKASI DATA INSENTIF & POIN:
         1. Data INSENTIF/POIN di kolom 'Total Poin' hanya boleh ditampilkan jika pengguna menyertakan 'Kata kunci' yang COCOK/BENAR dengan nama karyawan tersebut.
-        2. Jika pengguna menyebutkan Nama dan Kata Kunci yang BENAR (contoh: "Sodikin Belut Bingung"), LANGSUNG tampilkan seluruh isi teks rincian poin insentif karyawan tersebut secara rapi dan utuh (menurun).
+        2. Jika pengguna menyebutkan Nama dan Kata Kunci yang BENAR (contoh: "Sodikin Belut Bingung"), LANGSUNG tampilkan seluruh isi teks rincian poin insentif karyawan tersebut secara rapi dan utuh (menurun per poin).
         3. Jika Kata Kunci SALAH / BELUM DIBERIKAN oleh pengguna:
            Sampaikan dengan sopan bahwa data insentif bersifat rahasia dan minta pengguna menyebutkan Nama Karyawan dan Kata Kunci yang benar.
 
@@ -106,6 +98,11 @@ if user_query:
             bot_reply = None
             last_err = ""
 
+            # KUNCI UTAMA ANTI ERROR 400:
+            # Hanya bawa 1 pesan terakhir saja di memori payload agar tidak membengkak!
+            messages_payload = [{"role": "system", "content": system_prompt}]
+            messages_payload.append({"role": "user", "content": user_query})
+
             for api_key in ACTIVE_KEYS:
                 try:
                     client = Groq(api_key=api_key)
@@ -116,10 +113,7 @@ if user_query:
                             try:
                                 completion = client.chat.completions.create(
                                     model=model_name,
-                                    messages=[
-                                        {"role": "system", "content": system_prompt},
-                                        {"role": "user", "content": user_query}
-                                    ],
+                                    messages=messages_payload,
                                     temperature=0.1
                                 )
                                 bot_reply = completion.choices[0].message.content
