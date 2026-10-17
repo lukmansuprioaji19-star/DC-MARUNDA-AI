@@ -1,6 +1,9 @@
 import streamlit as st
 import pandas as pd
 from groq import Groq
+import requests
+from datetime import datetime
+import pytz
 
 # 1. Konfigurasi Halaman & Icon Aplikasi
 st.set_page_config(
@@ -31,7 +34,7 @@ with col1:
 with col2:
     st.title("DC Marunda AI")
 
-# 4. Ambil Semua API Key dari Secrets Streamlit (Rotasi Kunci)
+# 4. Ambil Secrets dari Streamlit
 raw_keys = [
     st.secrets.get("GROQ_API_KEY", ""),
     st.secrets.get("GROQ_API_KEY_1", ""),
@@ -39,6 +42,7 @@ raw_keys = [
     st.secrets.get("GROQ_API_KEY_3", ""),
 ]
 ACTIVE_KEYS = list(dict.fromkeys([k for k in raw_keys if k]))
+LOG_WEBHOOK_URL = st.secrets.get("LOG_WEBHOOK_URL", "")
 
 # 5. ID Google Sheet Operasional DC Marunda
 SHEET_ID = "1pCLPIS2Gi55_hQPTAp8v753TeU6WWPbchAAKGPDg6wE"
@@ -47,7 +51,7 @@ SHEET_ID = "1pCLPIS2Gi55_hQPTAp8v753TeU6WWPbchAAKGPDg6wE"
 def load_sheet_df(sheet_id, tab_name):
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={tab_name}"
     try:
-        df = pd.read_csv(url, dtype=str)  # Pakai dtype=str agar NIK berupa angka tetap terbaca rapi sebagai string
+        df = pd.read_csv(url, dtype=str)
         df = df.dropna(how="all").dropna(how="all", axis=1)
         df.columns = [str(col).strip() for col in df.columns]
         return df
@@ -68,26 +72,39 @@ def validate_and_get_user(sheet_id, nik_input):
     df_identitas = load_sheet_df(sheet_id, "INDENTITAS")
     
     if not df_identitas.empty:
-        # Cari kolom NIK & Nama secara otomatis
         nik_col = next((c for c in df_identitas.columns if "nik" in c.lower()), None)
         nama_col = next((c for c in df_identitas.columns if "nama" in c.lower()), None)
         
-        # Jika kolom NIK spesifik tidak ditemukan, cari di kolom pertama
         if not nik_col and len(df_identitas.columns) > 0:
             nik_col = df_identitas.columns[0]
         if not nama_col and len(df_identitas.columns) > 1:
             nama_col = df_identitas.columns[1]
             
         if nik_col and nama_col:
-            # Hilangkan desimal .0 jika ada dan bersihkan spasi
             df_identitas[nik_col] = df_identitas[nik_col].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
-            
             match = df_identitas[df_identitas[nik_col] == clean_nik]
             if not match.empty:
                 nama_found = str(match.iloc[0][nama_col]).strip()
                 return True, nama_found
                 
     return False, None
+
+def log_chat_to_sheet(nik, nama, pertanyaan):
+    if not LOG_WEBHOOK_URL:
+        return
+    try:
+        wib = pytz.timezone('Asia/Jakarta')
+        waktu_sekarang = datetime.now(wib).strftime("%Y-%m-%d %H:%M:%S")
+        payload = {
+            "waktu": waktu_sekarang,
+            "nik": nik,
+            "nama": nama,
+            "pertanyaan": pertanyaan
+        }
+        # Kirim data secara async/background ke Google Apps Script
+        requests.post(LOG_WEBHOOK_URL, json=payload, timeout=3)
+    except Exception:
+        pass
 
 def get_context_by_category(sheet_id, query):
     q = query.lower()
@@ -136,7 +153,7 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# 8. Input Pertanyaan Pengguna (Hanya Aktif Jika NIK Valid)
+# 8. Input Pertanyaan Pengguna
 if is_valid_user:
     user_query = st.chat_input(f"Halo {user_nama}, ketik pertanyaan Anda di sini...")
 else:
@@ -147,6 +164,9 @@ if user_query and is_valid_user:
     if not ACTIVE_KEYS:
         st.error("Gagal membaca GROQ_API_KEY di Secrets Streamlit!")
     else:
+        # Catat Log Chat ke Google Sheet secara otomatis
+        log_chat_to_sheet(user_nik, user_nama, user_query)
+
         st.session_state.messages.append({"role": "user", "content": user_query})
         with st.chat_message("user"):
             st.markdown(user_query)
@@ -179,23 +199,14 @@ if user_query and is_valid_user:
                 {"role": "user", "content": user_query}
             ]
 
-            # Model cadangan (fallback) jika pengambilan otomatis gagal
-            fallback_models = ["llama-3.3-70b-versatile", "llama3-70b-8192", "mixtral-8x7b-32768"]
-
             for api_key in ACTIVE_KEYS:
                 try:
                     client = Groq(api_key=api_key)
-                    
-                    try:
-                        all_models = client.models.list().data
-                        available_text_models = [
-                            m.id for m in all_models 
-                            if "guard" not in m.id.lower() and "whisper" not in m.id.lower()
-                        ]
-                        if not available_text_models:
-                            available_text_models = fallback_models
-                    except Exception:
-                        available_text_models = fallback_models
+                    all_models = client.models.list().data
+                    available_text_models = [
+                        m.id for m in all_models 
+                        if "guard" not in m.id.lower() and "whisper" not in m.id.lower()
+                    ]
 
                     for model_name in available_text_models:
                         try:
