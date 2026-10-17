@@ -2,11 +2,36 @@ import streamlit as st
 import pandas as pd
 from groq import Groq
 
-# 1. Konfigurasi Halaman Web Streamlit
-st.set_page_config(page_title="DC Marunda AI", page_icon="🤖")
-st.title("🤖 DC Marunda AI")
+# 1. Konfigurasi Halaman & Icon Aplikasi (Menggunakan logo.png dari GitHub)
+st.set_page_config(
+    page_title="DC Marunda AI",
+    page_icon="logo.png",
+    layout="centered"
+)
 
-# 2. Ambil Semua API Key dari Secrets Streamlit (Rotasi Opsi Kunci)
+# 2. Inject HTML untuk Branding PWA (Ikon di Layar Utama HP / Desktop)
+st.markdown(
+    """
+    <head>
+        <title>DC Marunda AI</title>
+        <meta name="apple-mobile-web-app-title" content="DC Marunda AI">
+        <meta name="application-name" content="DC Marunda AI">
+        <link rel="icon" type="image/png" href="logo.png">
+        <link rel="apple-touch-icon" href="logo.png">
+        <link rel="shortcut icon" href="logo.png">
+    </head>
+    """,
+    unsafe_allow_html=True
+)
+
+# 3. Header Tampilan Aplikasi dengan Logo
+col1, col2 = st.columns([1, 5])
+with col1:
+    st.image("logo.png", width=65)
+with col2:
+    st.title("DC Marunda AI")
+
+# 4. Ambil Semua API Key dari Secrets Streamlit (Rotasi Kunci)
 raw_keys = [
     st.secrets.get("GROQ_API_KEY", ""),
     st.secrets.get("GROQ_API_KEY_1", ""),
@@ -15,7 +40,7 @@ raw_keys = [
 ]
 ACTIVE_KEYS = list(dict.fromkeys([k for k in raw_keys if k]))
 
-# 3. ID Google Sheet Operasional DC Marunda
+# 5. ID Google Sheet Operasional DC Marunda
 SHEET_ID = "1pCLPIS2Gi55_hQPTAp8v753TeU6WWPbchAAKGPDg6wE"
 
 @st.cache_data(ttl=60)
@@ -23,10 +48,10 @@ def load_sheet_tab(sheet_id, tab_name):
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={tab_name}"
     try:
         df = pd.read_csv(url)
-        # Hapus baris & kolom yang seluruh isinya kosong (Kolom A-E, F, dst yang ada isinya AKAN TETAP ADA)
+        # Hapus baris & kolom kosong (kolom baru ke samping A-E, F, dst. tetap utuh)
         df = df.dropna(how="all").dropna(how="all", axis=1)
         
-        # Bersihkan spasi di nama header kolom
+        # Bersihkan spasi pada nama kolom
         df.columns = [str(col).strip() for col in df.columns]
         
         if not df.empty:
@@ -46,16 +71,16 @@ def get_context_by_category(sheet_id, query):
     elif any(k in q for k in ["tcode", "t-code", "code", "sap", "spkb", "wavepick", "running"]):
         return load_sheet_tab(sheet_id, "T-CODE")
     else:
-        # PINTU DEFAULT: Memuat tab INDENTITAS dan tetap menyerahkan ke AI Groq agar respons luwes & pintar
+        # Pintu default tetap memuat tab INDENTITAS
         return load_sheet_tab(sheet_id, "INDENTITAS")
 
-# 4. Inisialisasi Riwayat Chat
+# 6. Inisialisasi Riwayat Chat
 if "messages" not in st.session_state:
     st.session_state.messages = []
     welcome_text = """
 👋 **Selamat Datang di DC Marunda AI!**
 
-Silakan tanyakan informasi yang Anda butuhkan:
+Silakan tanyakan informasi operasional yang Anda butuhkan:
 - **Identitas & Jadwal Kerja**: *"Siapa saja yang masuk jam 6 pagi?"* atau *"Anwar jam berapa masuk?"*
 - **Cek Insentif**: *"Sodikin Belut Bingung"* (Memerlukan Kata Kunci)
 - **T-Code SAP**: *"T-Code running SPKB"*
@@ -67,7 +92,7 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# 5. Input Pertanyaan Pengguna
+# 7. Input Pertanyaan Pengguna
 user_query = st.chat_input("Ketik pertanyaan Anda di sini...")
 
 if user_query:
