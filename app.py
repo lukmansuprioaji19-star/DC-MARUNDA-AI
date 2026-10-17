@@ -2,14 +2,14 @@ import streamlit as st
 import pandas as pd
 from groq import Groq
 
-# 1. Konfigurasi Halaman & Icon Aplikasi (Menggunakan logo.png dari GitHub)
+# 1. Konfigurasi Halaman & Icon Aplikasi
 st.set_page_config(
     page_title="DC Marunda AI",
     page_icon="logo.png",
     layout="centered"
 )
 
-# 2. Inject HTML untuk Branding PWA (Ikon di Layar Utama HP / Desktop)
+# 2. Inject HTML untuk Branding PWA
 st.markdown(
     """
     <head>
@@ -47,7 +47,7 @@ SHEET_ID = "1pCLPIS2Gi55_hQPTAp8v753TeU6WWPbchAAKGPDg6wE"
 def load_sheet_df(sheet_id, tab_name):
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={tab_name}"
     try:
-        df = pd.read_csv(url)
+        df = pd.read_csv(url, dtype=str)  # Pakai dtype=str agar NIK berupa angka tetap terbaca rapi sebagai string
         df = df.dropna(how="all").dropna(how="all", axis=1)
         df.columns = [str(col).strip() for col in df.columns]
         return df
@@ -64,18 +64,29 @@ def validate_and_get_user(sheet_id, nik_input):
     if not nik_input or not str(nik_input).strip():
         return False, None
     
+    clean_nik = str(nik_input).strip()
     df_identitas = load_sheet_df(sheet_id, "INDENTITAS")
+    
     if not df_identitas.empty:
-        # Cari kolom NIK & Nama
+        # Cari kolom NIK & Nama secara otomatis
         nik_col = next((c for c in df_identitas.columns if "nik" in c.lower()), None)
         nama_col = next((c for c in df_identitas.columns if "nama" in c.lower()), None)
         
+        # Jika kolom NIK spesifik tidak ditemukan, cari di kolom pertama
+        if not nik_col and len(df_identitas.columns) > 0:
+            nik_col = df_identitas.columns[0]
+        if not nama_col and len(df_identitas.columns) > 1:
+            nama_col = df_identitas.columns[1]
+            
         if nik_col and nama_col:
-            # Match NIK sebagai string
-            match = df_identitas[df_identitas[nik_col].astype(str).str.strip() == str(nik_input).strip()]
+            # Hilangkan desimal .0 jika ada dan bersihkan spasi
+            df_identitas[nik_col] = df_identitas[nik_col].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+            
+            match = df_identitas[df_identitas[nik_col] == clean_nik]
             if not match.empty:
-                nama_found = str(match.iloc[0][nama_col])
+                nama_found = str(match.iloc[0][nama_col]).strip()
                 return True, nama_found
+                
     return False, None
 
 def get_context_by_category(sheet_id, query):
@@ -105,7 +116,7 @@ if user_nik:
     else:
         st.sidebar.error("❌ NIK Tidak Terdaftar di Data Karyawan!")
 else:
-    st.sidebar.info("Masukkan NIK resmi untuk membuka akses chat.")
+    st.sidebar.info("Masukkan NIK resmi di tab **INDENTITAS** untuk membuka akses chat.")
 
 # 7. Inisialisasi Riwayat Chat
 if "messages" not in st.session_state:
