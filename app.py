@@ -199,14 +199,23 @@ if user_query and is_valid_user:
                 {"role": "user", "content": user_query}
             ]
 
+            # Model cadangan (fallback) jika pengambilan otomatis gagal
+            fallback_models = ["llama-3.3-70b-versatile", "llama3-70b-8192", "mixtral-8x7b-32768"]
+
             for api_key in ACTIVE_KEYS:
                 try:
                     client = Groq(api_key=api_key)
-                    all_models = client.models.list().data
-                    available_text_models = [
-                        m.id for m in all_models 
-                        if "guard" not in m.id.lower() and "whisper" not in m.id.lower()
-                    ]
+                    
+                    try:
+                        all_models = client.models.list().data
+                        available_text_models = [
+                            m.id for m in all_models 
+                            if "guard" not in m.id.lower() and "whisper" not in m.id.lower()
+                        ]
+                        if not available_text_models:
+                            available_text_models = fallback_models
+                    except Exception:
+                        available_text_models = fallback_models
 
                     for model_name in available_text_models:
                         try:
