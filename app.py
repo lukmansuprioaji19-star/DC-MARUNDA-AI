@@ -2,8 +2,7 @@ import streamlit as st
 import pandas as pd
 from groq import Groq
 import requests
-from datetime import datetime
-import pytz
+from datetime import datetime, timezone, timedelta
 
 # 1. Konfigurasi Halaman & Icon Aplikasi
 st.set_page_config(
@@ -93,7 +92,8 @@ def log_chat_to_sheet(nik, nama, pertanyaan):
     if not LOG_WEBHOOK_URL:
         return
     try:
-        wib = pytz.timezone('Asia/Jakarta')
+        # Waktu Indonesia Barat (WIB = UTC+7)
+        wib = timezone(timedelta(hours=7))
         waktu_sekarang = datetime.now(wib).strftime("%Y-%m-%d %H:%M:%S")
         payload = {
             "waktu": waktu_sekarang,
@@ -101,7 +101,6 @@ def log_chat_to_sheet(nik, nama, pertanyaan):
             "nama": nama,
             "pertanyaan": pertanyaan
         }
-        # Kirim data secara async/background ke Google Apps Script
         requests.post(LOG_WEBHOOK_URL, json=payload, timeout=3)
     except Exception:
         pass
@@ -164,7 +163,6 @@ if user_query and is_valid_user:
     if not ACTIVE_KEYS:
         st.error("Gagal membaca GROQ_API_KEY di Secrets Streamlit!")
     else:
-        # Catat Log Chat ke Google Sheet secara otomatis
         log_chat_to_sheet(user_nik, user_nama, user_query)
 
         st.session_state.messages.append({"role": "user", "content": user_query})
