@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 from groq import Groq
-from datetime import datetime
 
 # 1. Konfigurasi Halaman & Icon Aplikasi (Menggunakan logo.png dari GitHub)
 st.set_page_config(
@@ -61,7 +60,10 @@ def load_sheet_tab(sheet_id, tab_name):
         return f"\n--- DATA TAB: {tab_name} ---\n" + df.to_csv(index=False)
     return ""
 
-def lookup_user_name(sheet_id, nik_input):
+def validate_and_get_user(sheet_id, nik_input):
+    if not nik_input or not str(nik_input).strip():
+        return False, None
+    
     df_identitas = load_sheet_df(sheet_id, "INDENTITAS")
     if not df_identitas.empty:
         # Cari kolom NIK & Nama
@@ -72,8 +74,9 @@ def lookup_user_name(sheet_id, nik_input):
             # Match NIK sebagai string
             match = df_identitas[df_identitas[nik_col].astype(str).str.strip() == str(nik_input).strip()]
             if not match.empty:
-                return str(match.iloc[0][nama_col])
-    return "User Marunda"
+                nama_found = str(match.iloc[0][nama_col])
+                return True, nama_found
+    return False, None
 
 def get_context_by_category(sheet_id, query):
     q = query.lower()
@@ -88,22 +91,27 @@ def get_context_by_category(sheet_id, query):
     else:
         return load_sheet_tab(sheet_id, "INDENTITAS")
 
-# 6. Sidebar Input NIK & Identifikasi Pengguna
-st.sidebar.header("Identitas Karyawan")
+# 6. Sidebar Input NIK & Validasi Ketat
+st.sidebar.header("🔐 Access Control")
 user_nik = st.sidebar.text_input("Masukkan NIK Anda:", value="", placeholder="Contoh: 5104001")
 
-user_nama = "Tamu"
+is_valid_user = False
+user_nama = None
+
 if user_nik:
-    user_nama = lookup_user_name(SHEET_ID, user_nik)
-    st.sidebar.success(f"**{user_nama}** ({user_nik})")
+    is_valid_user, user_nama = validate_and_get_user(SHEET_ID, user_nik)
+    if is_valid_user:
+        st.sidebar.success(f"👤 **{user_nama}**\nNIK: `{user_nik}`")
+    else:
+        st.sidebar.error("❌ NIK Tidak Terdaftar di Data Karyawan!")
 else:
-    st.sidebar.warning("Silakan masukkan NIK untuk mulai bertanya.")
+    st.sidebar.info("Masukkan NIK resmi untuk membuka akses chat.")
 
 # 7. Inisialisasi Riwayat Chat
 if "messages" not in st.session_state:
     st.session_state.messages = []
     welcome_text = """
-**Selamat Datang di DC Marunda AI!**
+👋 **Selamat Datang di DC Marunda AI!**
 
 Silakan tanyakan informasi operasional yang Anda butuhkan:
 - **Identitas & Jadwal Kerja**: *"Siapa saja yang masuk jam 6 pagi?"* atau *"Anwar jam berapa masuk?"*
@@ -117,13 +125,15 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# 8. Input Pertanyaan Pengguna
-user_query = st.chat_input("Ketik pertanyaan Anda di sini..." if user_nik else "Masukkan NIK di sidebar terlebih dahulu...")
+# 8. Input Pertanyaan Pengguna (Hanya Aktif Jika NIK Valid)
+if is_valid_user:
+    user_query = st.chat_input(f"Halo {user_nama}, ketik pertanyaan Anda di sini...")
+else:
+    st.chat_input("🔒 Akses Dikunci: Masukkan NIK resmi di sidebar terlebih dahulu...", disabled=True)
+    user_query = None
 
-if user_query:
-    if not user_nik:
-        st.error("Silakan masukkan NIK Anda di sidebar sebelah kiri terlebih dahulu!")
-    elif not ACTIVE_KEYS:
+if user_query and is_valid_user:
+    if not ACTIVE_KEYS:
         st.error("Gagal membaca GROQ_API_KEY di Secrets Streamlit!")
     else:
         st.session_state.messages.append({"role": "user", "content": user_query})
@@ -158,20 +168,21 @@ if user_query:
                 {"role": "user", "content": user_query}
             ]
 
-            # Model default yang stabil di Groq (bisa diganti sesuai kebutuhan)
+            # Model cadangan (fallback) jika pengambilan otomatis gagal
             fallback_models = ["llama-3.3-70b-versatile", "llama3-70b-8192", "mixtral-8x7b-32768"]
 
             for api_key in ACTIVE_KEYS:
                 try:
                     client = Groq(api_key=api_key)
                     
-                    # Coba ambil model list secara otomatis, jika gagal gunakan fallback list
                     try:
                         all_models = client.models.list().data
                         available_text_models = [
                             m.id for m in all_models 
                             if "guard" not in m.id.lower() and "whisper" not in m.id.lower()
                         ]
+                        if not available_text_models:
+                            available_text_models = fallback_models
                     except Exception:
                         available_text_models = fallback_models
 
