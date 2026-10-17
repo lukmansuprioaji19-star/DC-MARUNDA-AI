@@ -24,15 +24,14 @@ def load_sheet_tab(sheet_id, tab_name):
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={tab_name}"
     try:
         df = pd.read_csv(url)
-        # Hapus baris & kolom yang seluruh isinya kosong
+        # Hapus baris & kolom yang seluruh isinya kosong (kolom baru yang ada isinya AKAN TETAP ADA)
         df = df.dropna(how="all").dropna(how="all", axis=1)
         
-        # Ambil maksimal 4 kolom pertama saja (NIK, Nama, Job, Shift/Hari) untuk menghemat token & membuang kolom sampah di kanan
-        if tab_name == "INDENTITAS" and df.shape[1] >= 4:
-            df = df.iloc[:, :4]
+        # Bersihkan spasi di nama header kolom
+        df.columns = [str(col).strip() for col in df.columns]
             
         if not df.empty:
-            return f"\n--- DATA TAB: {tab_name} ---\n" + df.to_string(index=False)
+            return f"\n--- DATA TAB: {tab_name} ---\n" + df.to_csv(index=False)
     except Exception:
         pass
     return ""
