@@ -92,16 +92,23 @@ def log_chat_to_sheet(nik, nama, pertanyaan):
     if not LOG_WEBHOOK_URL:
         return
     try:
-        # Waktu Indonesia Barat (WIB = UTC+7)
         wib = timezone(timedelta(hours=7))
         waktu_sekarang = datetime.now(wib).strftime("%Y-%m-%d %H:%M:%S")
+        
         payload = {
             "waktu": waktu_sekarang,
-            "nik": nik,
-            "nama": nama,
-            "pertanyaan": pertanyaan
+            "nik": str(nik).strip(),
+            "nama": str(nama).strip(),
+            "pertanyaan": str(pertanyaan).strip()
         }
-        requests.post(LOG_WEBHOOK_URL, json=payload, timeout=3)
+        
+        # Kirim format JSON
+        headers = {'Content-Type': 'application/json'}
+        res = requests.post(LOG_WEBHOOK_URL.strip(), json=payload, headers=headers, timeout=5)
+        
+        # Cadangan kirim via form-data jika JSON gagal
+        if res.status_code != 200:
+            requests.post(LOG_WEBHOOK_URL.strip(), data=payload, timeout=5)
     except Exception:
         pass
 
