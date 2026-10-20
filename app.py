@@ -90,6 +90,30 @@ def validate_and_get_user(sheet_id, nik_input):
                 
     return False, None
 
+def search_mid_data(sheet_id, query):
+    df_mid = load_sheet_df(sheet_id, "MID")
+    if df_mid.empty:
+        return "\n--- DATA TAB: MID kosong atau tidak ditemukan ---\n"
+    
+    words = [w.strip() for w in query.lower().split() if len(w.strip()) > 1]
+    filtered_df = pd.DataFrame()
+    
+    mid_col = next((c for c in df_mid.columns if "mid" in c.lower()), df_mid.columns[0])
+    desc_col = next((c for c in df_mid.columns if "desc" in c.lower()), df_mid.columns[1] if len(df_mid.columns)>1 else df_mid.columns[0])
+    
+    for word in words:
+        match = df_mid[
+            df_mid[mid_col].astype(str).str.lower().str.contains(word, na=False) |
+            df_mid[desc_col].astype(str).str.lower().str.contains(word, na=False)
+        ]
+        if not match.empty:
+            filtered_df = pd.concat([filtered_df, match]).drop_duplicates()
+    
+    if not filtered_df.empty:
+        return f"\n--- DATA TAB: MID (HASIL PENCARIAN BARANG RELEVAN) ---\n" + filtered_df.head(20).to_csv(index=False)
+    
+    return f"\n--- DATA TAB: MID (SAMPEL 10 BARANG PERTAMA) ---\n" + df_mid.head(10).to_csv(index=False)
+
 def get_user_insentif_data(sheet_id, user_nik):
     df_insentif = load_sheet_df(sheet_id, "INSENTIF")
     if not df_insentif.empty:
@@ -124,7 +148,9 @@ def log_chat_to_sheet(nik, nama, pertanyaan, jawaban_ai):
 
 def get_context_by_category(sheet_id, query, user_nik):
     q = query.lower()
-    if any(k in q for k in ["insentif", "poin", "point", "kata kunci"]):
+    if any(k in q for k in ["mid", "barang", "produk", "desc", "mg2", "pcs in box", "pcs inbox", "shelf life", "expired", "ed", "75%"]):
+        return search_mid_data(sheet_id, query)
+    elif any(k in q for k in ["insentif", "poin", "point", "kata kunci"]):
         return get_user_insentif_data(sheet_id, user_nik)
     elif any(k in q for k in ["kpi", "whu", "ofr"]):
         return load_sheet_tab(sheet_id, "KPI")
@@ -160,6 +186,7 @@ if "messages" not in st.session_state:
     welcome_text = (
         "👋 **Selamat Datang di DC Marunda AI!**\n\n"
         "Silakan tanyakan informasi operasional yang Anda butuhkan:\n"
+        "- **Cek Barang & MID**: *\"Ciptadent 10014 berapa pcs sebox?\"* atau *\"MID 10524 shelf life berapa hari?\"*\n"
         "- **Identitas & Jadwal Kerja**: *\"Siapa saja yang masuk jam 6 pagi?\"* atau *\"Anwar jam berapa masuk?\"*\n"
         "- **Cek Insentif**: *\"Sodikin Belut Bingung\"* (Memerlukan Kata Kunci)\n"
         "- **T-Code SAP**: *\"T-Code running SPKB\"*\n"
@@ -196,11 +223,10 @@ if user_query and is_valid_user:
             f"GAYA BAHASA & KELUESAN BERBICARA:\n"
             f"1. ADAPTIF & FLEKSIBEL: Ikuti gaya bahasa pengguna. Jika pengguna bertanya/curhat dengan bahasa gaul/santai, jawablah dengan bahasa gaul/santai yang akrab, ramah, dan empatik. Jika pengguna bertanya dengan bahasa selain Indonesia (Jawa, Sunda, Inggris, dll), jawablah dengan bahasa yang sama atau bahasa yang diminta.\n"
             f"2. CERDAS, OPEN & BERPIKIR LUAS: Pengguna BISA dan BOLEH bertanya atau curhat mengenai hal apa saja di luar pekerjaan (misalnya: curhat masalah harian, rumus Excel, tips hidup, obrolan santai, humor, dll). Jawablah secara bijak, empati, cerdas, dan menyenangkan!\n"
-            f"3. ANTI-HALUSINASI: DILARANG KERAS mengarang/menciptakan link website (seperti hrd.marunda.co.id), email, atau nomor telepon palsu. Jika pengguna bertanya cara cek insentif, jelaskan langsung aturan main di aplikasi ini: 'Sebutkan kata kunci insentif Anda di chat ini'.\n\n"
+            f"3. ANTI-HALUSINASI: DILARANG KERAS mengarang/menciptakan link website, email, atau nomor telepon palsu.\n\n"
             f"ATURAN PENGGUNAAN DATA TABEL OPERASIONAL:\n"
-            f"1. Jika pertanyaan berkaitan dengan data operasional DC Marunda, gunakan informasi resmi dari [DATA TABEL OPERASIONAL DC MARUNDA].\n"
-            f"2. KEAMANAN INSENTIF: DILARANG KERAS membocorkan isi kolom 'Kata kunci'. Tampilkan data nominal/poin insentif HANYA JIKA kata kunci yang dimasukkan oleh pengguna di dalam chat cocok dengan kata kunci milik NIK {user_nik} di dalam data.\n"
-            f"3. Jika kata kunci belum disertakan atau salah, minta pengguna memberikan kata kunci yang benar secara sopan.\n\n"
+            f"1. TABEL MID (INFORMASI BARANG): Jika pengguna bertanya seputar MID, deskripsi barang (DESC), MG2, PCS INBOX, Shelf Life (Days), atau 75% Terima MT, gunakan data dari tab MID. Bantu jelaskan detail barangnya secara ramah & presisi.\n"
+            f"2. KEAMANAN INSENTIF: DILARANG KERAS membocorkan isi kolom 'Kata kunci'. Tampilkan data nominal/poin insentif HANYA JIKA kata kunci yang dimasukkan cocok dengan kata kunci NIK {user_nik}.\n\n"
             f"[DATA TABEL OPERASIONAL DC MARUNDA]:\n{context_data}"
         )
 
