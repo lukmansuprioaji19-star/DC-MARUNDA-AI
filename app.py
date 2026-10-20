@@ -142,8 +142,7 @@ def log_chat_to_sheet(nik, nama, pertanyaan, jawaban_ai):
             "pertanyaan": str(pertanyaan).strip(),
             "jawaban_ai": str(jawaban_ai).strip()
         }
-        # Timeout disetting 3 detik agar proses logging tidak menghambat UI
-        requests.post(LOG_WEBHOOK_URL.strip(), data=payload, timeout=3)
+        requests.post(LOG_WEBHOOK_URL.strip(), data=payload, timeout=5)
     except Exception:
         pass
 
@@ -243,4 +242,38 @@ if user_query and is_valid_user:
             for api_key in ACTIVE_KEYS:
                 try:
                     client = Groq(api_key=api_key)
-                    all_models =
+                    all_models = client.models.list().data
+                    available_text_models = [
+                        m.id for m in all_models 
+                        if "guard" not in m.id.lower() and "whisper" not in m.id.lower()
+                    ]
+
+                    for model_name in available_text_models:
+                        try:
+                            completion = client.chat.completions.create(
+                                model=model_name,
+                                messages=messages_payload,
+                                temperature=0.2,
+                                max_tokens=600
+                            )
+                            bot_reply = completion.choices[0].message.content
+                            if bot_reply:
+                                break
+                        except Exception as m_err:
+                            last_err = str(m_err)
+                            continue
+                    
+                    if bot_reply:
+                        break
+                except Exception as err:
+                    last_err = str(err)
+                    continue
+
+            if bot_reply:
+                with st.chat_message("assistant"):
+                    st.markdown(bot_reply)
+                st.session_state.messages.append({"role": "assistant", "content": bot_reply})
+                
+                log_chat_to_sheet(user_nik, user_nama, user_query, bot_reply)
+            else:
+                st.error(f"Gagal memproses pesan: {last_err}")
