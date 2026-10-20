@@ -88,7 +88,21 @@ def validate_and_get_user(sheet_id, nik_input):
                 
     return False, None
 
-def log_chat_to_sheet(nik, nama, pertanyaan):
+def get_user_insentif_data(sheet_id, user_nik):
+    df_insentif = load_sheet_df(sheet_id, "INSENTIF")
+    if not df_insentif.empty:
+        nik_col = next((c for c in df_insentif.columns if "nik" in c.lower()), None)
+        if not nik_col and len(df_insentif.columns) > 0:
+            nik_col = df_insentif.columns[0]
+            
+        if nik_col:
+            df_insentif[nik_col] = df_insentif[nik_col].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+            user_data = df_insentif[df_insentif[nik_col] == str(user_nik).strip()]
+            if not user_data.empty:
+                return f"\n--- DATA INSENTIF KHUSUS KARYAWAN LOGIN (NIK: {user_nik}) ---\n" + user_data.to_csv(index=False)
+    return "\n--- DATA INSENTIF KHUSUS: Data tidak ditemukan untuk NIK ini ---\n"
+
+def log_chat_to_sheet(nik, nama, pertanyaan, jawaban_ai):
     if not LOG_WEBHOOK_URL:
         return
     try:
@@ -99,23 +113,19 @@ def log_chat_to_sheet(nik, nama, pertanyaan):
             "waktu": waktu_sekarang,
             "nik": str(nik).strip(),
             "nama": str(nama).strip(),
-            "pertanyaan": str(pertanyaan).strip()
+            "pertanyaan": str(pertanyaan).strip(),
+            "jawaban_ai": str(jawaban_ai).strip()
         }
         
-        # Kirim format JSON
-        headers = {'Content-Type': 'application/json'}
-        res = requests.post(LOG_WEBHOOK_URL.strip(), json=payload, headers=headers, timeout=5)
-        
-        # Cadangan kirim via form-data jika JSON gagal
-        if res.status_code != 200:
-            requests.post(LOG_WEBHOOK_URL.strip(), data=payload, timeout=5)
+        # Kirim payload data ke Google Apps Script
+        requests.post(LOG_WEBHOOK_URL.strip(), data=payload, timeout=5)
     except Exception:
         pass
 
-def get_context_by_category(sheet_id, query):
+def get_context_by_category(sheet_id, query, user_nik):
     q = query.lower()
     if any(k in q for k in ["insentif", "poin", "point", "kata kunci"]):
-        return load_sheet_tab(sheet_id, "INSENTIF")
+        return get_user_insentif_data(sheet_id, user_nik)
     elif any(k in q for k in ["kpi", "whu", "ofr"]):
         return load_sheet_tab(sheet_id, "KPI")
     elif any(k in q for k in ["pencapaian", "box", "pcs", "lead time"]):
@@ -170,26 +180,25 @@ if user_query and is_valid_user:
     if not ACTIVE_KEYS:
         st.error("Gagal membaca GROQ_API_KEY di Secrets Streamlit!")
     else:
-        log_chat_to_sheet(user_nik, user_nama, user_query)
-
         st.session_state.messages.append({"role": "user", "content": user_query})
         with st.chat_message("user"):
             st.markdown(user_query)
 
-        context_data = get_context_by_category(SHEET_ID, user_query)
+        context_data = get_context_by_category(SHEET_ID, user_query, user_nik)
 
         system_prompt = f"""
         Kamu adalah asisten AI pintar untuk operasional DC Marunda.
         Pengguna yang sedang bertanya bernama: {user_nama} (NIK: {user_nik}).
 
-        PERAN & PERILAKU:
-        1. Jawablah pertanyaan pengguna secara ramah, luwes, komunikatif, dan rapi (gunakan bullet points jika menampilkan daftar).
-        2. Jika pertanyaan berkaitan dengan data operasional DC Marunda, gunakan informasi dari [DATA TABEL OPERASIONAL DC MARUNDA].
-        3. Jika pertanyaan bersifat umum atau percakapan biasa (di luar tabel), jawablah secara bijak, cerdas, dan sopan sebagai AI.
+        GAYA BAHASA & KELUESAN BERBICARA:
+        1. ADAPTIF & FLEKSIBEL: Ikuti gaya bahasa pengguna. Jika pengguna bertanya dengan bahasa gaul/santai, jawablah dengan bahasa gaul/santai yang akrab. Jika pengguna bertanya dengan bahasa selain Indonesia (Jawa, Sunda, Inggris, dll), jawablah dengan bahasa yang sama atau bahasa yang diminta.
+        2. CERDAS & LUAS: Jika pertanyaan bersifat umum, percakapan sehari-hari, atau di luar tabel, jawablah secara bijak, cerdas, luwes, dan menyenangkan sebagai AI.
+        3. ANTI-HALUSINASI: DILARANG KERAS mengarang/menciptakan link website (seperti hrd.marunda.co.id), email, atau nomor telepon palsu. Jika pengguna bertanya cara cek insentif, jelaskan langsung aturan main di aplikasi ini: "Sebutkan kata kunci insentif Anda di chat ini".
 
-        ATURAN KEAMANAN & PRIVASI:
-        1. DILARANG KERAS MENAMPILKAN / MEMBOCORKAN ISI KOLOM 'Kata kunci' DALAM KONDISI APA PUN.
-        2. Khusus data Insentif/Poin: Hanya tampilkan jika pengguna menyertakan Kata Kunci yang BENAR.
+        ATURAN PENGGUNAAN DATA TABEL OPERASIONAL:
+        1. Jika pertanyaan berkaitan dengan data operasional DC Marunda, gunakan informasi resmi dari [DATA TABEL OPERASIONAL DC MARUNDA].
+        2. KEAMANAN INSENTIF: DILARANG KERAS membocorkan isi kolom 'Kata kunci'. Tampilkan data nominal/poin insentif HANYA JIKA kata kunci yang dimasukkan oleh pengguna di dalam chat cocok dengan kata kunci milik NIK {user_nik} di dalam data.
+        3. Jika kata kunci belum disertakan atau salah, minta pengguna memberikan kata kunci yang benar secara sopan.
 
         [DATA TABEL OPERASIONAL DC MARUNDA]:
         {context_data}
@@ -204,30 +213,21 @@ if user_query and is_valid_user:
                 {"role": "user", "content": user_query}
             ]
 
-            # Model cadangan (fallback) jika pengambilan otomatis gagal
-            fallback_models = ["llama-3.3-70b-versatile", "llama3-70b-8192", "mixtral-8x7b-32768"]
-
             for api_key in ACTIVE_KEYS:
                 try:
                     client = Groq(api_key=api_key)
-                    
-                    try:
-                        all_models = client.models.list().data
-                        available_text_models = [
-                            m.id for m in all_models 
-                            if "guard" not in m.id.lower() and "whisper" not in m.id.lower()
-                        ]
-                        if not available_text_models:
-                            available_text_models = fallback_models
-                    except Exception:
-                        available_text_models = fallback_models
+                    all_models = client.models.list().data
+                    available_text_models = [
+                        m.id for m in all_models 
+                        if "guard" not in m.id.lower() and "whisper" not in m.id.lower()
+                    ]
 
                     for model_name in available_text_models:
                         try:
                             completion = client.chat.completions.create(
                                 model=model_name,
                                 messages=messages_payload,
-                                temperature=0.1,
+                                temperature=0.2,
                                 max_tokens=600
                             )
                             bot_reply = completion.choices[0].message.content
@@ -247,5 +247,8 @@ if user_query and is_valid_user:
                 with st.chat_message("assistant"):
                     st.markdown(bot_reply)
                 st.session_state.messages.append({"role": "assistant", "content": bot_reply})
+                
+                # Kirim log pertanyaan + jawaban AI setelah AI selesai menjawab
+                log_chat_to_sheet(user_nik, user_nama, user_query, bot_reply)
             else:
                 st.error(f"Gagal memproses pesan: {last_err}")
