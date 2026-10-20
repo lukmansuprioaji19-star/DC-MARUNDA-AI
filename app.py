@@ -46,7 +46,7 @@ LOG_WEBHOOK_URL = st.secrets.get("LOG_WEBHOOK_URL", "")
 # 5. ID Google Sheet Operasional DC Marunda
 SHEET_ID = "1pCLPIS2Gi55_hQPTAp8v753TeU6WWPbchAAKGPDg6wE"
 
-# HANYA GUNAKAN MODEL GROQ TERBARU YANG RESMI AKTIF & STABIL
+# MODEL GROQ TERBARU YANG RESMI AKTIF & STABIL
 STABLE_GROQ_MODELS = [
     "llama-3.3-70b-versatile",
     "llama-3.1-8b-instant"
@@ -226,15 +226,7 @@ if user_query and is_valid_user:
         context_data = get_context_by_category(SHEET_ID, user_query, user_nik)
 
         system_prompt = f"""
-        Kamu adalah asisten AI pintar untuk operasional DC Marunda.
-        Pengguna yang sedang bertanya bernama: {user_nama} (NIK: {user_nik}).
+Kamu adalah asisten AI pintar untuk operasional DC Marunda.
+Pengguna yang sedang bertanya bernama: {user_nama} (NIK: {user_nik}).
 
-        GAYA BAHASA & KELUESAN BERBICARA:
-        1. ADAPTIF & FLEKSIBEL: Ikuti gaya bahasa pengguna. Jika pengguna bertanya/curhat dengan bahasa gaul/santai, jawablah dengan bahasa gaul/santai yang akrab, ramah, dan empatik. Jika pengguna bertanya dengan bahasa selain Indonesia (Jawa, Sunda, Inggris, dll), jawablah dengan bahasa yang sama atau bahasa yang diminta.
-        2. CERDAS, OPEN & BERPIKIR LUAS: Pengguna BISA dan BOLEH bertanya atau curhat mengenai hal apa saja di luar pekerjaan (misalnya: curhat masalah harian, rumus Excel, tips hidup, obrolan santai, humor, dll). Jawablah secara bijak, empati, cerdas, dan menyenangkan!
-        3. ANTI-HALUSINASI: DILARANG KERAS mengarang/menciptakan link website (seperti hrd.marunda.co.id), email, atau nomor telepon palsu. Jika pengguna bertanya cara cek insentif, jelaskan langsung aturan main di aplikasi ini: "Sebutkan kata kunci insentif Anda di chat ini".
-
-        ATURAN PENGGUNAAN DATA TABEL OPERASIONAL:
-        1. TABEL MID (INFORMASI BARANG): Jika pengguna bertanya seputar MID, deskripsi barang, MG2, pcs per box, shelf life, atau ED 75% penerimaan toko MT/swalayan/E-Com, gunakan data dari tab MID. Bantu jelaskan angka/informasi dari tabel secara presisi dan rapi.
-        2. KEAMANAN INSENTIF: DILARANG KERAS membocorkan isi kolom 'Kata kunci'. Tampilkan data nominal/poin insentif HANYA JIKA kata kunci yang dimasukkan oleh pengguna di dalam chat cocok dengan kata kunci milik NIK {user_nik} di dalam data.
-        3. Jika
+GAYA BAHASA & KELUES
