@@ -46,13 +46,12 @@ LOG_WEBHOOK_URL = st.secrets.get("LOG_WEBHOOK_URL", "")
 # 5. ID Google Sheet Operasional DC Marunda
 SHEET_ID = "1pCLPIS2Gi55_hQPTAp8v753TeU6WWPbchAAKGPDg6wE"
 
-# Daftar Model Groq Resmi & Stabil (Diurutkan dari yang terbaik)
-RECOMMENDED_MODELS = [
+# Daftar Model Groq Resmi, Aktif, & Stabil (TIDAK ADA MODEL PENSIUN)
+STABLE_GROQ_MODELS = [
     "llama-3.3-70b-versatile",
     "llama-3.1-8b-instant",
     "llama3-70b-8192",
-    "llama3-8b-8192",
-    "mixtral-8x7b-32768"
+    "llama3-8b-8192"
 ]
 
 @st.cache_data(ttl=60)
@@ -108,7 +107,6 @@ def search_mid_data(sheet_id, query):
     words = [w.strip() for w in query.lower().split() if len(w.strip()) > 1]
     filtered_df = pd.DataFrame()
     
-    # Cari berdasarkan MID atau nama barang/DESC
     mid_col = next((c for c in df_mid.columns if "mid" in c.lower()), df_mid.columns[0])
     desc_col = next((c for c in df_mid.columns if "desc" in c.lower()), df_mid.columns[1] if len(df_mid.columns)>1 else df_mid.columns[0])
     
@@ -120,11 +118,9 @@ def search_mid_data(sheet_id, query):
         if not match.empty:
             filtered_df = pd.concat([filtered_df, match]).drop_duplicates()
     
-    # Jika ketemu pencarian spesifik, kembalikan max 20 baris teratas agar cepat
     if not filtered_df.empty:
         return f"\n--- DATA TAB: MID (HASIL PENCARIAN RELEVAN) ---\n" + filtered_df.head(20).to_csv(index=False)
     
-    # Jika pertanyaan umum tentang MID, ambil sampel 10 baris pertama
     return f"\n--- DATA TAB: MID (SAMPEL DATA) ---\n" + df_mid.head(10).to_csv(index=False)
 
 def get_user_insentif_data(sheet_id, user_nik):
@@ -263,8 +259,8 @@ if user_query and is_valid_user:
                 try:
                     client = Groq(api_key=api_key)
                     
-                    # Gunakan model rekomendasi utama Llama 3
-                    for model_name in RECOMMENDED_MODELS:
+                    # Coba hanya model resmi & aktif yang pasti bisa
+                    for model_name in STABLE_GROQ_MODELS:
                         try:
                             completion = client.chat.completions.create(
                                 model=model_name,
@@ -290,7 +286,7 @@ if user_query and is_valid_user:
                     st.markdown(bot_reply)
                 st.session_state.messages.append({"role": "assistant", "content": bot_reply})
                 
-                # Kirim log pertanyaan + jawaban AI setelah AI selesai menjawab
+                # Kirim log ke Google Sheet
                 log_chat_to_sheet(user_nik, user_nama, user_query, bot_reply)
             else:
                 st.error(f"Gagal memproses pesan: {last_err}")
