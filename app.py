@@ -46,10 +46,6 @@ LOG_WEBHOOK_URL = st.secrets.get("LOG_WEBHOOK_URL", "")
 # 5. ID Google Sheet Operasional DC Marunda
 SHEET_ID = "1pCLPIS2Gi55_hQPTAp8v753TeU6WWPbchAAKGPDg6wE"
 
-# MODEL GROQ UTAMA LAMA 3.3 VERSATILE
-PRIMARY_MODEL = "llama-3.3-70b-versatile"
-BACKUP_MODEL = "llama-3.1-8b-instant"
-
 @st.cache_data(ttl=60)
 def load_sheet_df(sheet_id, tab_name):
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={tab_name}"
@@ -146,7 +142,6 @@ def log_chat_to_sheet(nik, nama, pertanyaan, jawaban_ai):
             "pertanyaan": str(pertanyaan).strip(),
             "jawaban_ai": str(jawaban_ai).strip()
         }
-        # Timeout dipasang singkat 2 detik agar tidak menahan proses UI
         requests.post(LOG_WEBHOOK_URL.strip(), data=payload, timeout=2)
     except Exception:
         pass
@@ -249,24 +244,23 @@ if user_query and is_valid_user:
                 try:
                     client = Groq(api_key=api_key)
                     
-                    # Percobaan 1: Model Utama
-                    try:
-                        completion = client.chat.completions.create(
-                            model=PRIMARY_MODEL,
-                            messages=messages_payload,
-                            temperature=0.2,
-                            max_tokens=600
-                        )
-                        bot_reply = completion.choices[0].message.content
-                    except Exception:
-                        # Percobaan 2: Model Cadangan
-                        completion = client.chat.completions.create(
-                            model=BACKUP_MODEL,
-                            messages=messages_payload,
-                            temperature=0.2,
-                            max_tokens=600
-                        )
-                        bot_reply = completion.choices[0].message.content
+                    # Ambil daftar model aktif dari server Groq secara otomatis
+                    server_models = [m.id for m in client.models.list().data if "llama" in m.id.lower() and "guard" not in m.id.lower()]
+                    
+                    for model_name in server_models:
+                        try:
+                            completion = client.chat.completions.create(
+                                model=model_name,
+                                messages=messages_payload,
+                                temperature=0.2,
+                                max_tokens=600
+                            )
+                            bot_reply = completion.choices[0].message.content
+                            if bot_reply:
+                                break
+                        except Exception as m_err:
+                            last_err = str(m_err)
+                            continue
                     
                     if bot_reply:
                         break
@@ -279,7 +273,6 @@ if user_query and is_valid_user:
                 st.markdown(bot_reply)
             st.session_state.messages.append({"role": "assistant", "content": bot_reply})
             
-            # Catat log chat secara efisien
             log_chat_to_sheet(user_nik, user_nama, user_query, bot_reply)
         else:
             st.error(f"Gagal memproses pesan: {last_err}")
