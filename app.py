@@ -37,13 +37,6 @@ LOG_WEBHOOK_URL = st.secrets.get("LOG_WEBHOOK_URL", "")
 # 5. ID Google Sheet Operasional DC Marunda
 SHEET_ID = "1pCLPIS2Gi55_hQPTAp8v753TeU6WWPbchAAKGPDg6wE"
 
-# MODEL GROQ RESMI YANG HANYA AKTIF & TERSEDIA
-ACTIVE_GROQ_MODELS = [
-    "llama-3.3-70b-versatile",
-    "llama-3.1-8b-instant",
-    "mixtral-8x7b-32768"
-]
-
 @st.cache_data(ttl=60)
 def load_sheet_df(sheet_id, tab_name):
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={tab_name}"
@@ -193,31 +186,6 @@ if user_query and is_valid_user:
             for api_key in ACTIVE_KEYS:
                 try:
                     client = Groq(api_key=api_key)
-                    for model_name in ACTIVE_GROQ_MODELS:
-                        try:
-                            completion = client.chat.completions.create(
-                                model=model_name,
-                                messages=messages_payload,
-                                temperature=0.2,
-                                max_tokens=600
-                            )
-                            bot_reply = completion.choices[0].message.content
-                            if bot_reply:
-                                break
-                        except Exception as m_err:
-                            last_err = str(m_err)
-                            continue
-                    if bot_reply:
-                        break
-                except Exception as err:
-                    last_err = str(err)
-                    continue
-
-        if bot_reply:
-            with st.chat_message("assistant"):
-                st.markdown(bot_reply)
-            st.session_state.messages.append({"role": "assistant", "content": bot_reply})
-            
-            log_chat_to_sheet(user_nik, user_nama, user_query, bot_reply)
-        else:
-            st.error(f"Gagal memproses pesan: {last_err}")
+                    
+                    # OTOMATIS MENGAMBIL DAFTAR MODEL YANG SEDANG ONLINE DARI GROQ
+                    models
