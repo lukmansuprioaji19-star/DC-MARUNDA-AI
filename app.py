@@ -69,6 +69,8 @@ def validate_and_get_user(sheet_id, nik_input):
     
     clean_nik = str(nik_input).strip()
     df_identitas = load_sheet_df(sheet_id, "IDENTITAS")
+    if df_identitas.empty:
+        df_identitas = load_sheet_df(sheet_id, "INDENTITAS")
     
     if not df_identitas.empty:
         nik_col = next((c for c in df_identitas.columns if "nik" in c.lower()), None)
@@ -116,8 +118,6 @@ def log_chat_to_sheet(nik, nama, pertanyaan, jawaban_ai):
             "pertanyaan": str(pertanyaan).strip(),
             "jawaban_ai": str(jawaban_ai).strip()
         }
-        
-        # Kirim payload data ke Google Apps Script
         requests.post(LOG_WEBHOOK_URL.strip(), data=payload, timeout=5)
     except Exception:
         pass
@@ -133,7 +133,10 @@ def get_context_by_category(sheet_id, query, user_nik):
     elif any(k in q for k in ["tcode", "t-code", "code", "sap", "spkb", "wavepick", "running"]):
         return load_sheet_tab(sheet_id, "T-CODE")
     else:
-        return load_sheet_tab(sheet_id, "IDENTITAS")
+        res = load_sheet_tab(sheet_id, "IDENTITAS")
+        if not res:
+            res = load_sheet_tab(sheet_id, "INDENTITAS")
+        return res
 
 # 6. Sidebar Input NIK & Validasi Ketat
 st.sidebar.header("🔐 Access Control")
@@ -154,15 +157,16 @@ else:
 # 7. Inisialisasi Riwayat Chat
 if "messages" not in st.session_state:
     st.session_state.messages = []
-    welcome_text = """
-👋 **Selamat Datang di DC Marunda AI!**
-
-Silakan tanyakan informasi operasional yang Anda butuhkan:
-- **Identitas & Jadwal Kerja**: *"Siapa saja yang masuk jam 6 pagi?"* atau *"Anwar jam berapa masuk?"*
-- **Cek Insentif**: *"Sodikin Belut Bingung"* (Memerlukan Kata Kunci)
-- **T-Code SAP**: *"T-Code running SPKB"*
-- **KPI & Pencapaian**: *"Cek KPI"* atau *"Pencapaian lead time"*
-    """
+    welcome_text = (
+        "👋 **Selamat Datang di DC Marunda AI!**\n\n"
+        "Silakan tanyakan informasi operasional yang Anda butuhkan:\n"
+        "- **Identitas & Jadwal Kerja**: *\"Siapa saja yang masuk jam 6 pagi?\"* atau *\"Anwar jam berapa masuk?\"*\n"
+        "- **Cek Insentif**: *\"Sodikin Belut Bingung\"* (Memerlukan Kata Kunci)\n"
+        "- **T-Code SAP**: *\"T-Code running SPKB\"*\n"
+        "- **KPI & Pencapaian**: *\"Cek KPI\"* atau *\"Pencapaian lead time\"*\n\n"
+        "💬 **Mau Curhat atau Obrolan Santai?**\n"
+        "Mau curhat, tanya rumus Excel, atau sekadar obrolan santai di luar pekerjaan juga boleh banget lho! Bebas tanya apa saja! 😊"
+    )
     st.session_state.messages.append({"role": "assistant", "content": welcome_text})
 
 for message in st.session_state.messages:
@@ -171,7 +175,7 @@ for message in st.session_state.messages:
 
 # 8. Input Pertanyaan Pengguna
 if is_valid_user:
-    user_query = st.chat_input(f"Halo {user_nama}, ketik pertanyaan Anda di sini...")
+    user_query = st.chat_input(f"Halo {user_nama}, ketik pertanyaan atau curhatan Anda di sini...")
 else:
     st.chat_input("🔒 Akses Dikunci: Masukkan NIK resmi di sidebar terlebih dahulu...", disabled=True)
     user_query = None
@@ -186,23 +190,19 @@ if user_query and is_valid_user:
 
         context_data = get_context_by_category(SHEET_ID, user_query, user_nik)
 
-        system_prompt = f"""
-        Kamu adalah asisten AI pintar untuk operasional DC Marunda.
-        Pengguna yang sedang bertanya bernama: {user_nama} (NIK: {user_nik}).
-
-        GAYA BAHASA & KELUESAN BERBICARA:
-        1. ADAPTIF & FLEKSIBEL: Ikuti gaya bahasa pengguna. Jika pengguna bertanya dengan bahasa gaul/santai, jawablah dengan bahasa gaul/santai yang akrab. Jika pengguna bertanya dengan bahasa selain Indonesia (Jawa, Sunda, Inggris, dll), jawablah dengan bahasa yang sama atau bahasa yang diminta.
-        2. CERDAS & LUAS: Jika pertanyaan bersifat umum, percakapan sehari-hari, atau di luar tabel, jawablah secara bijak, cerdas, luwes, dan menyenangkan sebagai AI.
-        3. ANTI-HALUSINASI: DILARANG KERAS mengarang/menciptakan link website (seperti hrd.marunda.co.id), email, atau nomor telepon palsu. Jika pengguna bertanya cara cek insentif, jelaskan langsung aturan main di aplikasi ini: "Sebutkan kata kunci insentif Anda di chat ini".
-
-        ATURAN PENGGUNAAN DATA TABEL OPERASIONAL:
-        1. Jika pertanyaan berkaitan dengan data operasional DC Marunda, gunakan informasi resmi dari [DATA TABEL OPERASIONAL DC MARUNDA].
-        2. KEAMANAN INSENTIF: DILARANG KERAS membocorkan isi kolom 'Kata kunci'. Tampilkan data nominal/poin insentif HANYA JIKA kata kunci yang dimasukkan oleh pengguna di dalam chat cocok dengan kata kunci milik NIK {user_nik} di dalam data.
-        3. Jika kata kunci belum disertakan atau salah, minta pengguna memberikan kata kunci yang benar secara sopan.
-
-        [DATA TABEL OPERASIONAL DC MARUNDA]:
-        {context_data}
-        """
+        system_prompt = (
+            f"Kamu adalah asisten AI pintar untuk operasional DC Marunda.\n"
+            f"Pengguna yang sedang bertanya bernama: {user_nama} (NIK: {user_nik}).\n\n"
+            f"GAYA BAHASA & KELUESAN BERBICARA:\n"
+            f"1. ADAPTIF & FLEKSIBEL: Ikuti gaya bahasa pengguna. Jika pengguna bertanya/curhat dengan bahasa gaul/santai, jawablah dengan bahasa gaul/santai yang akrab, ramah, dan empatik. Jika pengguna bertanya dengan bahasa selain Indonesia (Jawa, Sunda, Inggris, dll), jawablah dengan bahasa yang sama atau bahasa yang diminta.\n"
+            f"2. CERDAS, OPEN & BERPIKIR LUAS: Pengguna BISA dan BOLEH bertanya atau curhat mengenai hal apa saja di luar pekerjaan (misalnya: curhat masalah harian, rumus Excel, tips hidup, obrolan santai, humor, dll). Jawablah secara bijak, empati, cerdas, dan menyenangkan!\n"
+            f"3. ANTI-HALUSINASI: DILARANG KERAS mengarang/menciptakan link website (seperti hrd.marunda.co.id), email, atau nomor telepon palsu. Jika pengguna bertanya cara cek insentif, jelaskan langsung aturan main di aplikasi ini: 'Sebutkan kata kunci insentif Anda di chat ini'.\n\n"
+            f"ATURAN PENGGUNAAN DATA TABEL OPERASIONAL:\n"
+            f"1. Jika pertanyaan berkaitan dengan data operasional DC Marunda, gunakan informasi resmi dari [DATA TABEL OPERASIONAL DC MARUNDA].\n"
+            f"2. KEAMANAN INSENTIF: DILARANG KERAS membocorkan isi kolom 'Kata kunci'. Tampilkan data nominal/poin insentif HANYA JIKA kata kunci yang dimasukkan oleh pengguna di dalam chat cocok dengan kata kunci milik NIK {user_nik} di dalam data.\n"
+            f"3. Jika kata kunci belum disertakan atau salah, minta pengguna memberikan kata kunci yang benar secara sopan.\n\n"
+            f"[DATA TABEL OPERASIONAL DC MARUNDA]:\n{context_data}"
+        )
 
         with st.spinner("Mencari data..."):
             bot_reply = None
@@ -248,7 +248,6 @@ if user_query and is_valid_user:
                     st.markdown(bot_reply)
                 st.session_state.messages.append({"role": "assistant", "content": bot_reply})
                 
-                # Kirim log pertanyaan + jawaban AI setelah AI selesai menjawab
                 log_chat_to_sheet(user_nik, user_nama, user_query, bot_reply)
             else:
                 st.error(f"Gagal memproses pesan: {last_err}")
