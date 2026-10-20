@@ -46,6 +46,15 @@ LOG_WEBHOOK_URL = st.secrets.get("LOG_WEBHOOK_URL", "")
 # 5. ID Google Sheet Operasional DC Marunda
 SHEET_ID = "1pCLPIS2Gi55_hQPTAp8v753TeU6WWPbchAAKGPDg6wE"
 
+# Daftar Model Groq Resmi & Stabil (Diurutkan dari yang terbaik)
+RECOMMENDED_MODELS = [
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+    "llama3-70b-8192",
+    "llama3-8b-8192",
+    "mixtral-8x7b-32768"
+]
+
 @st.cache_data(ttl=60)
 def load_sheet_df(sheet_id, tab_name):
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={tab_name}"
@@ -68,7 +77,6 @@ def validate_and_get_user(sheet_id, nik_input):
         return False, None
     
     clean_nik = str(nik_input).strip()
-    # Coba baca tab IDENTITAS (atau INDENTITAS sebagai fallback)
     df_identitas = load_sheet_df(sheet_id, "IDENTITAS")
     if df_identitas.empty:
         df_identitas = load_sheet_df(sheet_id, "INDENTITAS")
@@ -90,6 +98,34 @@ def validate_and_get_user(sheet_id, nik_input):
                 return True, nama_found
                 
     return False, None
+
+def search_mid_data(sheet_id, query):
+    df_mid = load_sheet_df(sheet_id, "MID")
+    if df_mid.empty:
+        return "\n--- DATA TAB: MID kosong ---\n"
+    
+    # Ambil kata-kata penting dari query
+    words = [w.strip() for w in query.lower().split() if len(w.strip()) > 1]
+    filtered_df = pd.DataFrame()
+    
+    # Cari berdasarkan MID atau nama barang/DESC
+    mid_col = next((c for c in df_mid.columns if "mid" in c.lower()), df_mid.columns[0])
+    desc_col = next((c for c in df_mid.columns if "desc" in c.lower()), df_mid.columns[1] if len(df_mid.columns)>1 else df_mid.columns[0])
+    
+    for word in words:
+        match = df_mid[
+            df_mid[mid_col].astype(str).str.lower().str.contains(word, na=False) |
+            df_mid[desc_col].astype(str).str.lower().str.contains(word, na=False)
+        ]
+        if not match.empty:
+            filtered_df = pd.concat([filtered_df, match]).drop_duplicates()
+    
+    # Jika ketemu pencarian spesifik, kembalikan max 20 baris teratas agar cepat
+    if not filtered_df.empty:
+        return f"\n--- DATA TAB: MID (HASIL PENCARIAN RELEVAN) ---\n" + filtered_df.head(20).to_csv(index=False)
+    
+    # Jika pertanyaan umum tentang MID, ambil sampel 10 baris pertama
+    return f"\n--- DATA TAB: MID (SAMPEL DATA) ---\n" + df_mid.head(10).to_csv(index=False)
 
 def get_user_insentif_data(sheet_id, user_nik):
     df_insentif = load_sheet_df(sheet_id, "INSENTIF")
@@ -126,7 +162,7 @@ def log_chat_to_sheet(nik, nama, pertanyaan, jawaban_ai):
 def get_context_by_category(sheet_id, query, user_nik):
     q = query.lower()
     if any(k in q for k in ["mid", "barang", "produk", "desc", "mg2", "pcs in box", "pcs inbox", "shelf life", "expired", "ed", "75%"]):
-        return load_sheet_tab(sheet_id, "MID")
+        return search_mid_data(sheet_id, query)
     elif any(k in q for k in ["insentif", "poin", "point", "kata kunci"]):
         return get_user_insentif_data(sheet_id, user_nik)
     elif any(k in q for k in ["kpi", "whu", "ofr"]):
@@ -136,7 +172,6 @@ def get_context_by_category(sheet_id, query, user_nik):
     elif any(k in q for k in ["tcode", "t-code", "code", "sap", "spkb", "wavepick", "running"]):
         return load_sheet_tab(sheet_id, "T-CODE")
     else:
-        # Coba ambil tab IDENTITAS (atau INDENTITAS jika fallback)
         res = load_sheet_tab(sheet_id, "IDENTITAS")
         if not res:
             res = load_sheet_tab(sheet_id, "INDENTITAS")
@@ -165,7 +200,7 @@ if "messages" not in st.session_state:
 👋 **Selamat Datang di DC Marunda AI!**
 
 Silakan tanyakan informasi operasional yang Anda butuhkan:
-- **Cek Barang & MID**: *"Ciptadent 10014 berapa pcs sebox?"* atau *"Berapa shelf life Mama Lemon?"* / *"Cek ED 75% terima MT"*
+- **Cek Barang & MID**: *"Ciptadent 10014 berapa pcs sebox?"* atau *"MID 1120081 berapa yang diterima MT?"*
 - **Identitas & Jadwal Kerja**: *"Siapa saja yang masuk jam 6 pagi?"* atau *"Anwar jam berapa masuk?"*
 - **Cek Insentif**: *"Sodikin Belut Bingung"* (Memerlukan Kata Kunci)
 - **T-Code SAP**: *"T-Code running SPKB"*
@@ -207,7 +242,7 @@ if user_query and is_valid_user:
         3. ANTI-HALUSINASI: DILARANG KERAS mengarang/menciptakan link website (seperti hrd.marunda.co.id), email, atau nomor telepon palsu. Jika pengguna bertanya cara cek insentif, jelaskan langsung aturan main di aplikasi ini: "Sebutkan kata kunci insentif Anda di chat ini".
 
         ATURAN PENGGUNAAN DATA TABEL OPERASIONAL:
-        1. TABEL MID (INFORMASI BARANG): Jika pengguna bertanya seputar MID, deskripsi barang, MG2, pcs per box, shelf life, atau ED 75% penerimaan toko MT/swalayan/E-Com, gunakan data dari tab MID. Bantu hitungkan atau jelaskan secara tepat dan rapi.
+        1. TABEL MID (INFORMASI BARANG): Jika pengguna bertanya seputar MID, deskripsi barang, MG2, pcs per box, shelf life, atau ED 75% penerimaan toko MT/swalayan/E-Com, gunakan data dari tab MID. Bantu jelaskan angka/informasi dari tabel secara presisi dan rapi.
         2. KEAMANAN INSENTIF: DILARANG KERAS membocorkan isi kolom 'Kata kunci'. Tampilkan data nominal/poin insentif HANYA JIKA kata kunci yang dimasukkan oleh pengguna di dalam chat cocok dengan kata kunci milik NIK {user_nik} di dalam data.
         3. Jika kata kunci belum disertakan atau salah, minta pengguna memberikan kata kunci yang benar secara sopan.
 
@@ -227,13 +262,9 @@ if user_query and is_valid_user:
             for api_key in ACTIVE_KEYS:
                 try:
                     client = Groq(api_key=api_key)
-                    all_models = client.models.list().data
-                    available_text_models = [
-                        m.id for m in all_models 
-                        if "guard" not in m.id.lower() and "whisper" not in m.id.lower()
-                    ]
-
-                    for model_name in available_text_models:
+                    
+                    # Gunakan model rekomendasi utama Llama 3
+                    for model_name in RECOMMENDED_MODELS:
                         try:
                             completion = client.chat.completions.create(
                                 model=model_name,
