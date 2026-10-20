@@ -13,14 +13,7 @@ st.set_page_config(
 
 # 2. Inject HTML untuk Branding PWA
 st.markdown(
-    "<head>"
-    "<title>DC Marunda AI</title>"
-    "<meta name='apple-mobile-web-app-title' content='DC Marunda AI'>"
-    "<meta name='application-name' content='DC Marunda AI'>"
-    "<link rel='icon' type='image/png' href='logo.png'>"
-    "<link rel='apple-touch-icon' href='logo.png'>"
-    "<link rel='shortcut icon' href='logo.png'>"
-    "</head>",
+    "<head><title>DC Marunda AI</title><meta name='apple-mobile-web-app-title' content='DC Marunda AI'><meta name='application-name' content='DC Marunda AI'><link rel='icon' type='image/png' href='logo.png'><link rel='apple-touch-icon' href='logo.png'><link rel='shortcut icon' href='logo.png'></head>",
     unsafe_allow_html=True
 )
 
@@ -187,9 +180,69 @@ else:
 # 7. Inisialisasi Riwayat Chat
 if "messages" not in st.session_state:
     st.session_state.messages = []
-    welcome_text = (
-        "👋 **Selamat Datang di DC Marunda AI!**\n\n"
-        "Silakan tanyakan informasi operasional yang Anda butuhkan:\n"
-        "- **Cek Barang & MID**: Ciptadent 10014 berapa pcs sebox? atau MID 1120081 berapa yang diterima MT?\n"
-        "- **Identitas & Jadwal Kerja**: Siapa saja yang masuk jam 6 pagi? atau Anwar jam berapa masuk?\n"
-        "- **Cek
+    welcome_text = "👋 **Selamat Datang di DC Marunda AI!**\n\nSilakan tanyakan informasi operasional yang Anda butuhkan:\n- **Cek Barang & MID**: Ciptadent 10014 berapa pcs sebox? atau MID 1120081 berapa yang diterima MT?\n- **Identitas & Jadwal Kerja**: Siapa saja yang masuk jam 6 pagi? atau Anwar jam berapa masuk?\n- **Cek Insentif**: Sodikin Belut Bingung (Memerlukan Kata Kunci)\n- **T-Code SAP**: T-Code running SPKB\n- **KPI & Pencapaian**: Cek KPI atau Pencapaian lead time\n\n💬 **Mau Curhat atau Obrolan Santai?**\nMau curhat, tanya rumus Excel, atau sekadar obrolan santai di luar pekerjaan juga boleh banget lho! Bebas tanya apa saja! 😊"
+    st.session_state.messages.append({"role": "assistant", "content": welcome_text})
+
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+# 8. Input Pertanyaan Pengguna
+if is_valid_user:
+    user_query = st.chat_input(f"Halo {user_nama}, ketik pertanyaan atau curhatan Anda di sini...")
+else:
+    st.chat_input("🔒 Akses Dikunci: Masukkan NIK resmi di sidebar terlebih dahulu...", disabled=True)
+    user_query = None
+
+if user_query and is_valid_user:
+    if not ACTIVE_KEYS:
+        st.error("Gagal membaca GROQ_API_KEY di Secrets Streamlit!")
+    else:
+        st.session_state.messages.append({"role": "user", "content": user_query})
+        with st.chat_message("user"):
+            st.markdown(user_query)
+
+        context_data = get_context_by_category(SHEET_ID, user_query, user_nik)
+
+        system_prompt = "Kamu adalah asisten AI pintar untuk operasional DC Marunda.\nPengguna bernama: " + str(user_nama) + " (NIK: " + str(user_nik) + ").\n\nGAYA BAHASA & KELUESAN BERBICARA:\n1. ADAPTIF & FLEKSIBEL: Ikuti gaya bahasa pengguna. Jika pengguna santai, jawablah dengan santai dan ramah.\n2. CERDAS & BERPIKIR LUAS: Pengguna boleh bertanya/curhat hal di luar pekerjaan. Jawab secara bijak dan menyenangkan!\n3. ANTI-HALUSINASI: DILARANG KERAS mengarang/menciptakan link website, email, atau nomor telepon palsu.\n\nATURAN PENGGUNAAN DATA TABEL OPERASIONAL:\n1. TABEL MID: Gunakan data tab MID untuk pertanyaan barang/MID/shelf life/ED 75% penerimaan MT.\n2. KEAMANAN INSENTIF: DILARANG KERAS membocorkan isi kolom Kata kunci. Tampilkan data insentif HANYA JIKA kata kunci cocok.\n\n[DATA TABEL OPERASIONAL DC MARUNDA]:\n" + str(context_data)
+
+        bot_reply = None
+        last_err = "Gagal memproses pesan."
+
+        messages_payload = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_query}
+        ]
+
+        with st.spinner("Mencari data..."):
+            for api_key in ACTIVE_KEYS:
+                try:
+                    client = Groq(api_key=api_key)
+                    for model_name in RECOMMENDED_MODELS:
+                        try:
+                            completion = client.chat.completions.create(
+                                model=model_name,
+                                messages=messages_payload,
+                                temperature=0.2,
+                                max_tokens=600
+                            )
+                            bot_reply = completion.choices[0].message.content
+                            if bot_reply:
+                                break
+                        except Exception as m_err:
+                            last_err = str(m_err)
+                            continue
+                    if bot_reply:
+                        break
+                except Exception as err:
+                    last_err = str(err)
+                    continue
+
+        if bot_reply:
+            with st.chat_message("assistant"):
+                st.markdown(bot_reply)
+            st.session_state.messages.append({"role": "assistant", "content": bot_reply})
+            
+            log_chat_to_sheet(user_nik, user_nama, user_query, bot_reply)
+        else:
+            st.error(f"Gagal memproses pesan: {last_err}")
