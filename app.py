@@ -46,12 +46,10 @@ LOG_WEBHOOK_URL = st.secrets.get("LOG_WEBHOOK_URL", "")
 # 5. ID Google Sheet Operasional DC Marunda
 SHEET_ID = "1pCLPIS2Gi55_hQPTAp8v753TeU6WWPbchAAKGPDg6wE"
 
-# Daftar Model Groq Resmi, Aktif, & Stabil (TIDAK ADA MODEL PENSIUN)
+# HANYA GUNAKAN MODEL GROQ TERBARU YANG RESMI AKTIF & STABIL
 STABLE_GROQ_MODELS = [
     "llama-3.3-70b-versatile",
-    "llama-3.1-8b-instant",
-    "llama3-70b-8192",
-    "llama3-8b-8192"
+    "llama-3.1-8b-instant"
 ]
 
 @st.cache_data(ttl=60)
@@ -103,7 +101,6 @@ def search_mid_data(sheet_id, query):
     if df_mid.empty:
         return "\n--- DATA TAB: MID kosong ---\n"
     
-    # Ambil kata-kata penting dari query
     words = [w.strip() for w in query.lower().split() if len(w.strip()) > 1]
     filtered_df = pd.DataFrame()
     
@@ -240,53 +237,4 @@ if user_query and is_valid_user:
         ATURAN PENGGUNAAN DATA TABEL OPERASIONAL:
         1. TABEL MID (INFORMASI BARANG): Jika pengguna bertanya seputar MID, deskripsi barang, MG2, pcs per box, shelf life, atau ED 75% penerimaan toko MT/swalayan/E-Com, gunakan data dari tab MID. Bantu jelaskan angka/informasi dari tabel secara presisi dan rapi.
         2. KEAMANAN INSENTIF: DILARANG KERAS membocorkan isi kolom 'Kata kunci'. Tampilkan data nominal/poin insentif HANYA JIKA kata kunci yang dimasukkan oleh pengguna di dalam chat cocok dengan kata kunci milik NIK {user_nik} di dalam data.
-        3. Jika kata kunci belum disertakan atau salah, minta pengguna memberikan kata kunci yang benar secara sopan.
-
-        [DATA TABEL OPERASIONAL DC MARUNDA]:
-        {context_data}
-        """
-
-        with st.spinner("Mencari data..."):
-            bot_reply = None
-            last_err = "Gagal memproses pesan."
-
-            messages_payload = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_query}
-            ]
-
-            for api_key in ACTIVE_KEYS:
-                try:
-                    client = Groq(api_key=api_key)
-                    
-                    # Coba hanya model resmi & aktif yang pasti bisa
-                    for model_name in STABLE_GROQ_MODELS:
-                        try:
-                            completion = client.chat.completions.create(
-                                model=model_name,
-                                messages=messages_payload,
-                                temperature=0.2,
-                                max_tokens=600
-                            )
-                            bot_reply = completion.choices[0].message.content
-                            if bot_reply:
-                                break
-                        except Exception as m_err:
-                            last_err = str(m_err)
-                            continue
-                    
-                    if bot_reply:
-                        break
-                except Exception as err:
-                    last_err = str(err)
-                    continue
-
-            if bot_reply:
-                with st.chat_message("assistant"):
-                    st.markdown(bot_reply)
-                st.session_state.messages.append({"role": "assistant", "content": bot_reply})
-                
-                # Kirim log ke Google Sheet
-                log_chat_to_sheet(user_nik, user_nama, user_query, bot_reply)
-            else:
-                st.error(f"Gagal memproses pesan: {last_err}")
+        3. Jika
