@@ -46,11 +46,8 @@ LOG_WEBHOOK_URL = st.secrets.get("LOG_WEBHOOK_URL", "")
 # 5. ID Google Sheet Operasional DC Marunda
 SHEET_ID = "1pCLPIS2Gi55_hQPTAp8v753TeU6WWPbchAAKGPDg6wE"
 
-# KUNCI HANYA MODEL RESMI AKTIF DARI GROQ
-TARGET_MODELS = [
-    "llama-3.3-70b-versatile",
-    "llama-3.1-8b-instant"
-]
+# KUNCI HANYA SINGLE MODEL UTAMA GROQ TERBARU SANGAT STABIL
+PRIMARY_MODEL = "llama-3.3-70b-versatile"
 
 @st.cache_data(ttl=60)
 def load_sheet_df(sheet_id, tab_name):
@@ -249,21 +246,13 @@ if user_query and is_valid_user:
             for api_key in ACTIVE_KEYS:
                 try:
                     client = Groq(api_key=api_key)
-                    for model_name in TARGET_MODELS:
-                        try:
-                            completion = client.chat.completions.create(
-                                model=model_name,
-                                messages=messages_payload,
-                                temperature=0.2,
-                                max_tokens=600
-                            )
-                            bot_reply = completion.choices[0].message.content
-                            if bot_reply:
-                                break
-                        except Exception as m_err:
-                            last_err = str(m_err)
-                            continue
-                    
+                    completion = client.chat.completions.create(
+                        model=PRIMARY_MODEL,
+                        messages=messages_payload,
+                        temperature=0.2,
+                        max_tokens=600
+                    )
+                    bot_reply = completion.choices[0].message.content
                     if bot_reply:
                         break
                 except Exception as err:
