@@ -46,8 +46,13 @@ LOG_WEBHOOK_URL = st.secrets.get("LOG_WEBHOOK_URL", "")
 # 5. ID Google Sheet Operasional DC Marunda
 SHEET_ID = "1pCLPIS2Gi55_hQPTAp8v753TeU6WWPbchAAKGPDg6wE"
 
-# KUNCI HANYA SINGLE MODEL UTAMA GROQ TERBARU SANGAT STABIL
-PRIMARY_MODEL = "llama-3.3-70b-versatile"
+# DAFTAR MODEL PILIHAN DARI YANG TERPINTAR SAMPAI YANG PALING UMUM
+MODEL_CANDIDATES = [
+    "llama-3.3-70b-versatile",
+    "llama3-70b-8192",
+    "llama3-8b-8192",
+    "llama-3.1-8b-instant"
+]
 
 @st.cache_data(ttl=60)
 def load_sheet_df(sheet_id, tab_name):
@@ -226,44 +231,4 @@ if user_query and is_valid_user:
             "GAYA BAHASA & KELUESAN BERBICARA:\n"
             "1. ADAPTIF & FLEKSIBEL: Ikuti gaya bahasa pengguna. Jika pengguna bertanya/curhat dengan bahasa gaul/santai, jawablah dengan bahasa gaul/santai yang akrab, ramah, dan empatik. Jika pengguna bertanya dengan bahasa selain Indonesia (Jawa, Sunda, Inggris, dll), jawablah dengan bahasa yang sama atau bahasa yang diminta.\n"
             "2. CERDAS, OPEN & BERPIKIR LUAS: Pengguna BISA dan BOLEH bertanya atau curhat mengenai hal apa saja di luar pekerjaan (misalnya: curhat masalah harian, rumus Excel, tips hidup, obrolan santai, humor, dll). Jawablah secara bijak, empati, cerdas, dan menyenangkan!\n"
-            "3. ANTI-HALUSINASI: DILARANG KERAS mengarang/menciptakan link website (seperti hrd.marunda.co.id), email, atau nomor telepon palsu. Jika pengguna bertanya cara cek insentif, jelaskan langsung aturan main di aplikasi ini: 'Sebutkan kata kunci insentif Anda di chat ini'.\n\n"
-            "ATURAN PENGGUNAAN DATA TABEL OPERASIONAL:\n"
-            "1. TABEL MID (INFORMASI BARANG): Jika pengguna bertanya seputar MID, deskripsi barang, MG2, pcs per box, shelf life, atau ED 75% penerimaan toko MT/swalayan/E-Com, gunakan data dari tab MID. Bantu jelaskan angka/informasi dari tabel secara presisi dan rapi.\n"
-            "2. KEAMANAN INSENTIF: DILARANG KERAS membocorkan isi kolom 'Kata kunci'. Tampilkan data nominal/poin insentif HANYA JIKA kata kunci yang dimasukkan oleh pengguna di dalam chat cocok dengan kata kunci milik NIK " + str(user_nik) + " di dalam data.\n"
-            "3. Jika kata kunci belum disertakan atau salah, minta pengguna memberikan kata kunci yang benar secara sopan.\n\n"
-            "[DATA TABEL OPERASIONAL DC MARUNDA]:\n" + str(context_data)
-        )
-
-        bot_reply = None
-        last_err = "Gagal memproses pesan."
-
-        messages_payload = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_query}
-        ]
-
-        with st.spinner("Mencari data..."):
-            for api_key in ACTIVE_KEYS:
-                try:
-                    client = Groq(api_key=api_key)
-                    completion = client.chat.completions.create(
-                        model=PRIMARY_MODEL,
-                        messages=messages_payload,
-                        temperature=0.2,
-                        max_tokens=600
-                    )
-                    bot_reply = completion.choices[0].message.content
-                    if bot_reply:
-                        break
-                except Exception as err:
-                    last_err = str(err)
-                    continue
-
-        if bot_reply:
-            with st.chat_message("assistant"):
-                st.markdown(bot_reply)
-            st.session_state.messages.append({"role": "assistant", "content": bot_reply})
-            
-            log_chat_to_sheet(user_nik, user_nama, user_query, bot_reply)
-        else:
-            st.error(f"Gagal memproses pesan: {last_err}")
+            "3. ANTI-HALUSINASI: DILARANG KERAS mengarang/mencipt
