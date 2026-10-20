@@ -46,6 +46,12 @@ LOG_WEBHOOK_URL = st.secrets.get("LOG_WEBHOOK_URL", "")
 # 5. ID Google Sheet Operasional DC Marunda
 SHEET_ID = "1pCLPIS2Gi55_hQPTAp8v753TeU6WWPbchAAKGPDg6wE"
 
+# KUNCI HANYA MODEL RESMI AKTIF DARI GROQ
+TARGET_MODELS = [
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant"
+]
+
 @st.cache_data(ttl=60)
 def load_sheet_df(sheet_id, tab_name):
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={tab_name}"
@@ -243,11 +249,7 @@ if user_query and is_valid_user:
             for api_key in ACTIVE_KEYS:
                 try:
                     client = Groq(api_key=api_key)
-                    
-                    # Ambil daftar model aktif dari server Groq secara otomatis
-                    server_models = [m.id for m in client.models.list().data if "llama" in m.id.lower() and "guard" not in m.id.lower()]
-                    
-                    for model_name in server_models:
+                    for model_name in TARGET_MODELS:
                         try:
                             completion = client.chat.completions.create(
                                 model=model_name,
