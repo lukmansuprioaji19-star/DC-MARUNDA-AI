@@ -46,11 +46,9 @@ LOG_WEBHOOK_URL = st.secrets.get("LOG_WEBHOOK_URL", "")
 # 5. ID Google Sheet Operasional DC Marunda
 SHEET_ID = "1pCLPIS2Gi55_hQPTAp8v753TeU6WWPbchAAKGPDg6wE"
 
-# DAFTAR MODEL PILIHAN DARI YANG TERPINTAR SAMPAI YANG PALING UMUM
-MODEL_CANDIDATES = [
+# MODEL GROQ RESMI AKTIF & STABIL
+RECOMMENDED_MODELS = [
     "llama-3.3-70b-versatile",
-    "llama3-70b-8192",
-    "llama3-8b-8192",
     "llama-3.1-8b-instant"
 ]
 
@@ -202,33 +200,4 @@ if "messages" not in st.session_state:
         "💬 **Mau Curhat atau Obrolan Santai?**\n"
         "Mau curhat, tanya rumus Excel, atau sekadar obrolan santai di luar pekerjaan juga boleh banget lho! Bebas tanya apa saja! 😊"
     )
-    st.session_state.messages.append({"role": "assistant", "content": welcome_text})
-
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-
-# 8. Input Pertanyaan Pengguna
-if is_valid_user:
-    user_query = st.chat_input(f"Halo {user_nama}, ketik pertanyaan atau curhatan Anda di sini...")
-else:
-    st.chat_input("🔒 Akses Dikunci: Masukkan NIK resmi di sidebar terlebih dahulu...", disabled=True)
-    user_query = None
-
-if user_query and is_valid_user:
-    if not ACTIVE_KEYS:
-        st.error("Gagal membaca GROQ_API_KEY di Secrets Streamlit!")
-    else:
-        st.session_state.messages.append({"role": "user", "content": user_query})
-        with st.chat_message("user"):
-            st.markdown(user_query)
-
-        context_data = get_context_by_category(SHEET_ID, user_query, user_nik)
-
-        system_prompt = (
-            "Kamu adalah asisten AI pintar untuk operasional DC Marunda.\n"
-            "Pengguna yang sedang bertanya bernama: " + str(user_nama) + " (NIK: " + str(user_nik) + ").\n\n"
-            "GAYA BAHASA & KELUESAN BERBICARA:\n"
-            "1. ADAPTIF & FLEKSIBEL: Ikuti gaya bahasa pengguna. Jika pengguna bertanya/curhat dengan bahasa gaul/santai, jawablah dengan bahasa gaul/santai yang akrab, ramah, dan empatik. Jika pengguna bertanya dengan bahasa selain Indonesia (Jawa, Sunda, Inggris, dll), jawablah dengan bahasa yang sama atau bahasa yang diminta.\n"
-            "2. CERDAS, OPEN & BERPIKIR LUAS: Pengguna BISA dan BOLEH bertanya atau curhat mengenai hal apa saja di luar pekerjaan (misalnya: curhat masalah harian, rumus Excel, tips hidup, obrolan santai, humor, dll). Jawablah secara bijak, empati, cerdas, dan menyenangkan!\n"
-            "3. ANTI-HALUSINASI: DILARANG KERAS mengarang/mencipt
+    st.
