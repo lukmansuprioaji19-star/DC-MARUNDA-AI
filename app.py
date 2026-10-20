@@ -172,35 +172,4 @@ def get_context_by_category(sheet_id, query, user_nik):
 
 # 6. Sidebar Input NIK & Validasi Ketat
 st.sidebar.header("🔐 Access Control")
-user_nik = st.sidebar.text_input("Masukkan NIK Anda:", value="", placeholder="Contoh: 5104001")
-
-is_valid_user = False
-user_nama = None
-
-if user_nik:
-    is_valid_user, user_nama = validate_and_get_user(SHEET_ID, user_nik)
-    if is_valid_user:
-        st.sidebar.success(f"👤 **{user_nama}**\nNIK: `{user_nik}`")
-    else:
-        st.sidebar.error("❌ NIK Tidak Terdaftar di Data Karyawan!")
-else:
-    st.sidebar.info("Masukkan NIK resmi di tab **IDENTITAS** untuk membuka akses chat.")
-
-# 7. Inisialisasi Riwayat Chat
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-    welcome_text = (
-        "👋 **Selamat Datang di DC Marunda AI!**\n\n"
-        "Silakan tanyakan informasi operasional yang Anda butuhkan:\n"
-        "- **Cek Barang & MID**: *\"Ciptadent 10014 berapa pcs sebox?\"* atau *\"MID 1120081 berapa yang diterima MT?\"*\n"
-        "- **Identitas & Jadwal Kerja**: *\"Siapa saja yang masuk jam 6 pagi?\"* atau *\"Anwar jam berapa masuk?\"*\n"
-        "- **Cek Insentif**: *\"Sodikin Belut Bingung\"* (Memerlukan Kata Kunci)\n"
-        "- **T-Code SAP**: *\"T-Code running SPKB\"*\n"
-        "- **KPI & Pencapaian**: *\"Cek KPI\"* atau *\"Pencapaian lead time\"*\n\n"
-        "💬 **Mau Curhat atau Obrolan Santai?**\n"
-        "Mau curhat, tanya rumus Excel, atau sekadar obrolan santai di luar pekerjaan juga boleh banget lho! Bebas tanya apa saja! 😊"
-    )
-    st.session_state.messages.append({"role": "assistant", "content": welcome_text})
-
-for message in st.session_state.messages:
-    with
+user_nik = st.sidebar.text
