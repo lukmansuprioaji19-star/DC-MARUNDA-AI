@@ -37,7 +37,7 @@ LOG_WEBHOOK_URL = st.secrets.get("LOG_WEBHOOK_URL", "")
 # 5. ID Google Sheet Operasional DC Marunda
 SHEET_ID = "1pCLPIS2Gi55_hQPTAp8v753TeU6WWPbchAAKGPDg6wE"
 
-# MODEL GROQ RESMI AKTIF & STABIL
+# MODEL GROQ RESMI AKTIF
 RECOMMENDED_MODELS = [
     "llama-3.3-70b-versatile",
     "llama-3.1-8b-instant"
@@ -65,6 +65,7 @@ def validate_and_get_user(sheet_id, nik_input):
         return False, None
     
     clean_nik = str(nik_input).strip()
+    # Cek IDENTITAS (atau INDENTITAS)
     df_identitas = load_sheet_df(sheet_id, "IDENTITAS")
     if df_identitas.empty:
         df_identitas = load_sheet_df(sheet_id, "INDENTITAS")
@@ -86,30 +87,6 @@ def validate_and_get_user(sheet_id, nik_input):
                 return True, nama_found
                 
     return False, None
-
-def search_mid_data(sheet_id, query):
-    df_mid = load_sheet_df(sheet_id, "MID")
-    if df_mid.empty:
-        return "\n--- DATA TAB: MID kosong ---\n"
-    
-    words = [w.strip() for w in query.lower().split() if len(w.strip()) > 1]
-    filtered_df = pd.DataFrame()
-    
-    mid_col = next((c for c in df_mid.columns if "mid" in c.lower()), df_mid.columns[0])
-    desc_col = next((c for c in df_mid.columns if "desc" in c.lower()), df_mid.columns[1] if len(df_mid.columns)>1 else df_mid.columns[0])
-    
-    for word in words:
-        match = df_mid[
-            df_mid[mid_col].astype(str).str.lower().str.contains(word, na=False) |
-            df_mid[desc_col].astype(str).str.lower().str.contains(word, na=False)
-        ]
-        if not match.empty:
-            filtered_df = pd.concat([filtered_df, match]).drop_duplicates()
-    
-    if not filtered_df.empty:
-        return f"\n--- DATA TAB: MID (HASIL PENCARIAN RELEVAN) ---\n" + filtered_df.head(20).to_csv(index=False)
-    
-    return f"\n--- DATA TAB: MID (SAMPEL DATA) ---\n" + df_mid.head(10).to_csv(index=False)
 
 def get_user_insentif_data(sheet_id, user_nik):
     df_insentif = load_sheet_df(sheet_id, "INSENTIF")
@@ -145,9 +122,7 @@ def log_chat_to_sheet(nik, nama, pertanyaan, jawaban_ai):
 
 def get_context_by_category(sheet_id, query, user_nik):
     q = query.lower()
-    if any(k in q for k in ["mid", "barang", "produk", "desc", "mg2", "pcs in box", "pcs inbox", "shelf life", "expired", "ed", "75%"]):
-        return search_mid_data(sheet_id, query)
-    elif any(k in q for k in ["insentif", "poin", "point", "kata kunci"]):
+    if any(k in q for k in ["insentif", "poin", "point", "kata kunci"]):
         return get_user_insentif_data(sheet_id, user_nik)
     elif any(k in q for k in ["kpi", "whu", "ofr"]):
         return load_sheet_tab(sheet_id, "KPI")
@@ -180,7 +155,7 @@ else:
 # 7. Inisialisasi Riwayat Chat
 if "messages" not in st.session_state:
     st.session_state.messages = []
-    welcome_text = "👋 **Selamat Datang di DC Marunda AI!**\n\nSilakan tanyakan informasi operasional yang Anda butuhkan:\n- **Cek Barang & MID**: Ciptadent 10014 berapa pcs sebox? atau MID 1120081 berapa yang diterima MT?\n- **Identitas & Jadwal Kerja**: Siapa saja yang masuk jam 6 pagi? atau Anwar jam berapa masuk?\n- **Cek Insentif**: Sodikin Belut Bingung (Memerlukan Kata Kunci)\n- **T-Code SAP**: T-Code running SPKB\n- **KPI & Pencapaian**: Cek KPI atau Pencapaian lead time\n\n💬 **Mau Curhat atau Obrolan Santai?**\nMau curhat, tanya rumus Excel, atau sekadar obrolan santai di luar pekerjaan juga boleh banget lho! Bebas tanya apa saja! 😊"
+    welcome_text = "👋 **Selamat Datang di DC Marunda AI!**\n\nSilakan tanyakan informasi operasional yang Anda butuhkan:\n- **Identitas & Jadwal Kerja**: Siapa saja yang masuk jam 6 pagi? atau Anwar jam berapa masuk?\n- **Cek Insentif**: Sodikin Belut Bingung (Memerlukan Kata Kunci)\n- **T-Code SAP**: T-Code running SPKB\n- **KPI & Pencapaian**: Cek KPI atau Pencapaian lead time\n\n💬 **Mau Curhat atau Obrolan Santai?**\nMau curhat, tanya rumus Excel, atau sekadar obrolan santai di luar pekerjaan juga boleh banget lho! Bebas tanya apa saja! 😊"
     st.session_state.messages.append({"role": "assistant", "content": welcome_text})
 
 for message in st.session_state.messages:
@@ -204,7 +179,7 @@ if user_query and is_valid_user:
 
         context_data = get_context_by_category(SHEET_ID, user_query, user_nik)
 
-        system_prompt = "Kamu adalah asisten AI pintar untuk operasional DC Marunda.\nPengguna bernama: " + str(user_nama) + " (NIK: " + str(user_nik) + ").\n\nGAYA BAHASA & KELUESAN BERBICARA:\n1. ADAPTIF & FLEKSIBEL: Ikuti gaya bahasa pengguna. Jika pengguna santai, jawablah dengan santai dan ramah.\n2. CERDAS & BERPIKIR LUAS: Pengguna boleh bertanya/curhat hal di luar pekerjaan. Jawab secara bijak dan menyenangkan!\n3. ANTI-HALUSINASI: DILARANG KERAS mengarang/menciptakan link website, email, atau nomor telepon palsu.\n\nATURAN PENGGUNAAN DATA TABEL OPERASIONAL:\n1. TABEL MID: Gunakan data tab MID untuk pertanyaan barang/MID/shelf life/ED 75% penerimaan MT.\n2. KEAMANAN INSENTIF: DILARANG KERAS membocorkan isi kolom Kata kunci. Tampilkan data insentif HANYA JIKA kata kunci cocok.\n\n[DATA TABEL OPERASIONAL DC MARUNDA]:\n" + str(context_data)
+        system_prompt = "Kamu adalah asisten AI pintar untuk operasional DC Marunda.\nPengguna bernama: " + str(user_nama) + " (NIK: " + str(user_nik) + ").\n\nGAYA BAHASA & KELUESAN BERBICARA:\n1. ADAPTIF & FLEKSIBEL: Ikuti gaya bahasa pengguna. Jika pengguna santai/gaul/curhat, jawablah secara ramah, akrab, dan empatik.\n2. CERDAS & BERPIKIR LUAS: Pengguna boleh curhat atau bertanya hal di luar pekerjaan. Jawab secara bijak dan menyenangkan!\n3. ANTI-HALUSINASI: DILARANG KERAS mengarang link website, email, atau nomor telepon palsu.\n\nATURAN PENGGUNAAN DATA TABEL OPERASIONAL:\n1. KEAMANAN INSENTIF: DILARANG KERAS membocorkan isi kolom Kata kunci. Tampilkan data insentif HANYA JIKA kata kunci cocok.\n\n[DATA TABEL OPERASIONAL DC MARUNDA]:\n" + str(context_data)
 
         bot_reply = None
         last_err = "Gagal memproses pesan."
