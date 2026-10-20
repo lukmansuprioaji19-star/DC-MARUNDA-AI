@@ -189,11 +189,48 @@ else:
 # 7. Inisialisasi Riwayat Chat
 if "messages" not in st.session_state:
     st.session_state.messages = []
-    welcome_text = (
-        "👋 **Selamat Datang di DC Marunda AI!**\n\n"
-        "Silakan tanyakan informasi operasional yang Anda butuhkan:\n"
-        "- **Cek Barang & MID**: *\"Ciptadent 10014 berapa pcs sebox?\"* atau *\"MID 1120081 berapa yang diterima MT?\"*\n"
-        "- **Identitas & Jadwal Kerja**: *\"Siapa saja yang masuk jam 6 pagi?\"* atau *\"Anwar jam berapa masuk?\"*\n"
-        "- **Cek Insentif**: *\"Sodikin Belut Bingung\"* (Memerlukan Kata Kunci)\n"
-        "- **T-Code SAP**: *\"T-Code running SPKB\"*\n"
-        "- **KPI & Pencapaian**: *\"Cek KPI\"* atau *\"Pencapaian lead time\"*\
+    welcome_text = """👋 **Selamat Datang di DC Marunda AI!**
+
+Silakan tanyakan informasi operasional yang Anda butuhkan:
+- **Cek Barang & MID**: Ciptadent 10014 berapa pcs sebox? atau MID 1120081 berapa yang diterima MT?
+- **Identitas & Jadwal Kerja**: Siapa saja yang masuk jam 6 pagi? atau Anwar jam berapa masuk?
+- **Cek Insentif**: Sodikin Belut Bingung (Memerlukan Kata Kunci)
+- **T-Code SAP**: T-Code running SPKB
+- **KPI & Pencapaian**: Cek KPI atau Pencapaian lead time
+
+💬 **Mau Curhat atau Obrolan Santai?**
+Mau curhat, tanya rumus Excel, atau sekadar obrolan santai di luar pekerjaan juga boleh banget lho! Bebas tanya apa saja! 😊"""
+    st.session_state.messages.append({"role": "assistant", "content": welcome_text})
+
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+# 8. Input Pertanyaan Pengguna
+if is_valid_user:
+    user_query = st.chat_input(f"Halo {user_nama}, ketik pertanyaan atau curhatan Anda di sini...")
+else:
+    st.chat_input("🔒 Akses Dikunci: Masukkan NIK resmi di sidebar terlebih dahulu...", disabled=True)
+    user_query = None
+
+if user_query and is_valid_user:
+    if not ACTIVE_KEYS:
+        st.error("Gagal membaca GROQ_API_KEY di Secrets Streamlit!")
+    else:
+        st.session_state.messages.append({"role": "user", "content": user_query})
+        with st.chat_message("user"):
+            st.markdown(user_query)
+
+        context_data = get_context_by_category(SHEET_ID, user_query, user_nik)
+
+        system_prompt = f"""Kamu adalah asisten AI pintar untuk operasional DC Marunda.
+Pengguna yang sedang bertanya bernama: {user_nama} (NIK: {user_nik}).
+
+GAYA BAHASA & KELUESAN BERBICARA:
+1. ADAPTIF & FLEKSIBEL: Ikuti gaya bahasa pengguna. Jika pengguna bertanya/curhat dengan bahasa gaul/santai, jawablah dengan bahasa gaul/santai yang akrab, ramah, dan empatik.
+2. CERDAS & BERPIKIR LUAS: Pengguna BISA dan BOLEH bertanya atau curhat mengenai hal apa saja di luar pekerjaan (misalnya: curhat masalah harian, rumus Excel, tips hidup, obrolan santai, humor, dll). Jawablah secara bijak dan menyenangkan!
+3. ANTI-HALUSINASI: DILARANG KERAS mengarang/menciptakan link website, email, atau nomor telepon palsu. Jika pengguna bertanya cara cek insentif, jelaskan langsung aturan main di aplikasi ini: 'Sebutkan kata kunci insentif Anda di chat ini'.
+
+ATURAN PENGGUNAAN DATA TABEL OPERASIONAL:
+1. TABEL MID (INFORMASI BARANG): Gunakan data dari tab MID untuk menjawab pertanyaan barang.
+2. KEAMANAN INSENTIF: DILARANG KERAS membocorkan isi kolom 'Kata kunci'. Tampilkan
