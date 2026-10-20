@@ -172,4 +172,106 @@ def get_context_by_category(sheet_id, query, user_nik):
 
 # 6. Sidebar Input NIK & Validasi Ketat
 st.sidebar.header("🔐 Access Control")
-user_nik = st.sidebar.text
+user_nik = st.sidebar.text_input("Masukkan NIK Anda:", value="", placeholder="Contoh: 5104001")
+
+is_valid_user = False
+user_nama = None
+
+if user_nik:
+    is_valid_user, user_nama = validate_and_get_user(SHEET_ID, user_nik)
+    if is_valid_user:
+        st.sidebar.success(f"👤 **{user_nama}**\nNIK: `{user_nik}`")
+    else:
+        st.sidebar.error("❌ NIK Tidak Terdaftar di Data Karyawan!")
+else:
+    st.sidebar.info("Masukkan NIK resmi di tab **IDENTITAS** untuk membuka akses chat.")
+
+# 7. Inisialisasi Riwayat Chat
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+    welcome_text = (
+        "👋 **Selamat Datang di DC Marunda AI!**\n\n"
+        "Silakan tanyakan informasi operasional yang Anda butuhkan:\n"
+        "- **Cek Barang & MID**: *\"Ciptadent 10014 berapa pcs sebox?\"* atau *\"MID 1120081 berapa yang diterima MT?\"*\n"
+        "- **Identitas & Jadwal Kerja**: *\"Siapa saja yang masuk jam 6 pagi?\"* atau *\"Anwar jam berapa masuk?\"*\n"
+        "- **Cek Insentif**: *\"Sodikin Belut Bingung\"* (Memerlukan Kata Kunci)\n"
+        "- **T-Code SAP**: *\"T-Code running SPKB\"*\n"
+        "- **KPI & Pencapaian**: *\"Cek KPI\"* atau *\"Pencapaian lead time\"*\n\n"
+        "💬 **Mau Curhat atau Obrolan Santai?**\n"
+        "Mau curhat, tanya rumus Excel, atau sekadar obrolan santai di luar pekerjaan juga boleh banget lho! Bebas tanya apa saja! 😊"
+    )
+    st.session_state.messages.append({"role": "assistant", "content": welcome_text})
+
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+# 8. Input Pertanyaan Pengguna
+if is_valid_user:
+    user_query = st.chat_input(f"Halo {user_nama}, ketik pertanyaan atau curhatan Anda di sini...")
+else:
+    st.chat_input("🔒 Akses Dikunci: Masukkan NIK resmi di sidebar terlebih dahulu...", disabled=True)
+    user_query = None
+
+if user_query and is_valid_user:
+    if not ACTIVE_KEYS:
+        st.error("Gagal membaca GROQ_API_KEY di Secrets Streamlit!")
+    else:
+        st.session_state.messages.append({"role": "user", "content": user_query})
+        with st.chat_message("user"):
+            st.markdown(user_query)
+
+        context_data = get_context_by_category(SHEET_ID, user_query, user_nik)
+
+        system_prompt = (
+            "Kamu adalah asisten AI pintar untuk operasional DC Marunda.\n"
+            "Pengguna yang sedang bertanya bernama: " + str(user_nama) + " (NIK: " + str(user_nik) + ").\n\n"
+            "GAYA BAHASA & KELUESAN BERBICARA:\n"
+            "1. ADAPTIF & FLEKSIBEL: Ikuti gaya bahasa pengguna. Jika pengguna bertanya/curhat dengan bahasa gaul/santai, jawablah dengan bahasa gaul/santai yang akrab, ramah, dan empatik. Jika pengguna bertanya dengan bahasa selain Indonesia (Jawa, Sunda, Inggris, dll), jawablah dengan bahasa yang sama atau bahasa yang diminta.\n"
+            "2. CERDAS, OPEN & BERPIKIR LUAS: Pengguna BISA dan BOLEH bertanya atau curhat mengenai hal apa saja di luar pekerjaan (misalnya: curhat masalah harian, rumus Excel, tips hidup, obrolan santai, humor, dll). Jawablah secara bijak, empati, cerdas, dan menyenangkan!\n"
+            "3. ANTI-HALUSINASI: DILARANG KERAS mengarang/menciptakan link website (seperti hrd.marunda.co.id), email, atau nomor telepon palsu. Jika pengguna bertanya cara cek insentif, jelaskan langsung aturan main di aplikasi ini: 'Sebutkan kata kunci insentif Anda di chat ini'.\n\n"
+            "ATURAN PENGGUNAAN DATA TABEL OPERASIONAL:\n"
+            "1. TABEL MID (INFORMASI BARANG): Jika pengguna bertanya seputar MID, deskripsi barang, MG2, pcs per box, shelf life, atau ED 75% penerimaan toko MT/swalayan/E-Com, gunakan data dari tab MID. Bantu jelaskan angka/informasi dari tabel secara presisi dan rapi.\n"
+            "2. KEAMANAN INSENTIF: DILARANG KERAS membocorkan isi kolom 'Kata kunci'. Tampilkan data nominal/poin insentif HANYA JIKA kata kunci yang dimasukkan oleh pengguna di dalam chat cocok dengan kata kunci milik NIK " + str(user_nik) + " di dalam data.\n"
+            "3. Jika kata kunci belum disertakan atau salah, minta pengguna memberikan kata kunci yang benar secara sopan.\n\n"
+            "[DATA TABEL OPERASIONAL DC MARUNDA]:\n" + str(context_data)
+        )
+
+        bot_reply = None
+        last_err = "Gagal memproses pesan."
+
+        messages_payload = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_query}
+        ]
+
+        for api_key in ACTIVE_KEYS:
+            try:
+                client = Groq(api_key=api_key)
+                for model_name in STABLE_GROQ_MODELS:
+                    try:
+                        completion = client.chat.completions.create(
+                            model=model_name,
+                            messages=messages_payload,
+                            temperature=0.2,
+                            max_tokens=600
+                        )
+                        bot_reply = completion.choices[0].message.content
+                        if bot_reply:
+                            break
+                    except Exception as m_err:
+                        last_err = str(m_err)
+                        continue
+                
+                if bot_reply:
+                    break
+            except Exception as err:
+                last_err = str(err)
+                continue
+
+        if bot_reply:
+            with st.chat_message("assistant"):
+                st.markdown(bot_reply)
+            st.session_state.messages.append({"role": "assistant", "content": bot_reply})
+            
+            log_chat_to_sheet(user_nik, user_nama, user_query, bot_reply)
