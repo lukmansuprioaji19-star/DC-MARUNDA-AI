@@ -95,14 +95,14 @@ def search_mid_data(sheet_id, query):
     if df_mid.empty:
         return "\n--- DATA TAB: MID kosong atau tidak ditemukan ---\n"
     
-    words = [w.strip() for w in query.lower().split() if len(w.strip()) > 0]
+    words = [w.strip() for w in query.lower().split() if len(w.strip()) > 1]
     filtered_df = pd.DataFrame()
     
     mid_col = next((c for c in df_mid.columns if "mid" in c.lower()), df_mid.columns[0])
     desc_col = next((c for c in df_mid.columns if "desc" in c.lower()), df_mid.columns[1] if len(df_mid.columns)>1 else df_mid.columns[0])
     mg2_col = next((c for c in df_mid.columns if "mg2" in c.lower() or "mg" in c.lower()), df_mid.columns[2] if len(df_mid.columns)>2 else None)
     
-    # 1. Cek pencarian khusus MG2 berdasarkan nomor MID
+    # 1. Cek apakah ada nomor MID spesifik dalam query untuk dicari MG2 samanya
     target_mg2 = None
     if mg2_col:
         for word in words:
@@ -111,36 +111,23 @@ def search_mid_data(sheet_id, query):
                 target_mg2 = exact_mid_match.iloc[0][mg2_col]
                 break
     
+    # 2. Jika ketemu MID & MG2-nya, ambil SEMUA barang yang punya MG2 sama
     if target_mg2 and mg2_col:
         filtered_df = df_mid[df_mid[mg2_col].astype(str).str.strip().str.lower() == str(target_mg2).strip().lower()]
     else:
-        # 2. Pencarian Cerdas Multi-Keyword (Termasuk variasi ukuran seperti 1.5kg / 1.5 kg)
-        # Gabungkan teks pencarian gabungan untuk tiap baris agar mudah dicari
-        search_series = df_mid[mid_col].astype(str) + " " + df_mid[desc_col].astype(str)
-        if mg2_col:
-            search_series += " " + df_mid[mg2_col].astype(str)
-        search_series = search_series.str.lower()
-        
-        # Saring kata penghubung umum yang tidak relevan
-        ignore_words = {"ada", "berapa", "varian", "yang", "ukurannya", "ukuran", "saja", "apa", "sama", "dengan"}
-        clean_words = [w for w in words if w not in ignore_words and len(w) > 0]
-        
-        if clean_words:
-            # Cari baris yang mengandung SEMUA kata kunci pencarian sekaligus
-            condition = pd.Series(True, index=df_mid.index)
-            for word in clean_words:
-                condition = condition & search_series.str.contains(word, regex=False, na=False)
+        # 3. Pencarian standar berdasarkan kata kunci MID/DESC/MG2
+        for word in words:
+            cond = (
+                df_mid[mid_col].astype(str).str.lower().str.contains(word, na=False) |
+                df_mid[desc_col].astype(str).str.lower().str.contains(word, na=False)
+            )
+            if mg2_col:
+                cond = cond | df_mid[mg2_col].astype(str).str.lower().str.contains(word, na=False)
             
-            filtered_df = df_mid[condition]
-            
-            # Jika hasil pencarian ketat kosong, longgarkan ke pencarian salah satu kata
-            if filtered_df.empty:
-                loose_condition = pd.Series(False, index=df_mid.index)
-                for word in clean_words:
-                    if len(word) > 1:
-                        loose_condition = loose_condition | search_series.str.contains(word, regex=False, na=False)
-                filtered_df = df_mid[loose_condition]
-
+            match = df_mid[cond]
+            if not match.empty:
+                filtered_df = pd.concat([filtered_df, match]).drop_duplicates()
+    
     if not filtered_df.empty:
         return f"\n--- DATA TAB: MID (HASIL PENCARIAN BARANG RELEVAN) ---\n" + filtered_df.head(30).to_csv(index=False)
     
@@ -218,7 +205,7 @@ if "messages" not in st.session_state:
     welcome_text = (
         "👋 **Selamat Datang di DC Marunda AI!**\n\n"
         "Silakan tanyakan informasi operasional yang Anda butuhkan:\n"
-        "- **Cek Barang & MID**: *\"Ciptadent 10014 berapa pcs sebox?\"* atau *\"Mama Lime 1.5 kg ada berapa varian?\"*\n"
+        "- **Cek Barang & MID**: *\"Ciptadent 10014 berapa pcs sebox?\"* atau *\"MID 10524 shelf life berapa hari?\"*\n"
         "- **Identitas & Jadwal Kerja**: *\"Siapa saja yang masuk jam 6 pagi?\"* atau *\"Anwar jam berapa masuk?\"*\n"
         "- **Cek Insentif**: *\"Sodikin Belut Bingung\"* (Memerlukan Kata Kunci)\n"
         "- **T-Code SAP**: *\"T-Code running SPKB\"*\n"
@@ -257,7 +244,7 @@ if user_query and is_valid_user:
             f"2. CERDAS, OPEN & BERPIKIR LUAS: Pengguna BISA dan BOLEH bertanya atau curhat mengenai hal apa saja di luar pekerjaan (misalnya: curhat masalah harian, rumus Excel, tips hidup, obrolan santai, humor, dll). Jawablah secara bijak, empati, cerdas, dan menyenangkan!\n"
             f"3. ANTI-HALUSINASI: DILARANG KERAS mengarang/menciptakan link website, email, atau nomor telepon palsu.\n\n"
             f"ATURAN PENGGUNAAN DATA TABEL OPERASIONAL:\n"
-            f"1. TABEL MID (INFORMASI BARANG): Jika pengguna bertanya seputar MID, deskripsi barang (DESC), MG2, PCS INBOX, Shelf Life (Days), atau 75% Terima MT, gunakan data dari tab MID. Bantu hitung atau sebutkan varian barangnya secara ramah & presisi.\n"
+            f"1. TABEL MID (INFORMASI BARANG): Jika pengguna bertanya seputar MID, deskripsi barang (DESC), MG2, PCS INBOX, Shelf Life (Days), atau 75% Terima MT, gunakan data dari tab MID. Bantu jelaskan detail barangnya secara ramah & presisi.\n"
             f"2. KEAMANAN INSENTIF: DILARANG KERAS membocorkan isi kolom 'Kata kunci'. Tampilkan data nominal/poin insentif HANYA JIKA kata kunci yang dimasukkan cocok dengan kata kunci NIK {user_nik}.\n\n"
             f"[DATA TABEL OPERASIONAL DC MARUNDA]:\n{context_data}"
         )
