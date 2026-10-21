@@ -211,4 +211,83 @@ for message in st.session_state.messages:
 
 # 8. Input Pertanyaan Pengguna
 if is_valid_user:
-    user_query = st.chat_input(f"Halo {user_nama}, ketik pertanyaan atau curhatan Anda di
+    user_query = st.chat_input(f"Halo {user_nama}, ketik pertanyaan atau curhatan Anda di sini...")
+else:
+    st.chat_input("🔒 Akses Dikunci: Masukkan NIK resmi di sidebar terlebih dahulu...", disabled=True)
+    user_query = None
+
+if user_query and is_valid_user:
+    if not ACTIVE_KEYS:
+        st.error("Gagal membaca GROQ_API_KEY di Secrets Streamlit!")
+    else:
+        st.session_state.messages.append({"role": "user", "content": user_query})
+        with st.chat_message("user"):
+            st.markdown(user_query)
+
+        context_data = get_context_by_category(SHEET_ID, user_query, user_nik)
+
+        # SYSTEM PROMPT ALAMI TANPA KALIMAT SAPAAN BERULANG
+        system_prompt = (
+            "Kamu adalah DC Marunda AI, asisten operasional resmi DC Marunda.\n"
+            + "Lawan bicaramu bernama: " + str(user_nama) + " (NIK: " + str(user_nik) + ").\n\n"
+            + "GAYA BAHASA & INSTRUKSI UTAMA:\n"
+            + "1. LANGSUNG KE JAWABAN: DILARANG KERAS mengucapkan 'Salam kenal', 'Halo', atau memperkenalkan diri lagi di setiap balasan, karena percakapan sudah berlangsung.\n"
+            + "2. FLEKSIBEL & RAMAH: Ikuti bahasa pengguna. Jika pengguna santai, jawab dengan santai dan akrab.\n"
+            + "3. CERDAS: Jawab pertanyaan operasional dari data tabel secara akurat, atau tanggapi curhatan/pertanyaan umum secara bijak.\n"
+            + "4. ANTI-HALUSINASI: DILARANG mengarang link, email, atau nomor telepon palsu.\n\n"
+            + "[DATA TABEL OPERASIONAL DC MARUNDA]:\n" + str(context_data)
+        )
+
+        with st.spinner("Mencari data..."):
+            bot_reply = None
+            last_err = "Gagal memproses pesan."
+
+            # SERTAKAN SELURUH RIWAYAT CHAT SEBELUMNYA AGAR AI INGAT KONTEKS
+            messages_payload = [{"role": "system", "content": system_prompt}]
+            for msg in st.session_state.messages[-6:]:  # Mengambil 6 percakapan terakhir
+                messages_payload.append({"role": msg["role"], "content": msg["content"]})
+
+            PREFERRED_MODELS = [
+                "llama-3.3-70b-versatile",
+                "llama-3.1-8b-instant"
+            ]
+
+            for api_key in ACTIVE_KEYS:
+                try:
+                    client = Groq(api_key=api_key)
+                    all_models = [m.id for m in client.models.list().data]
+                    
+                    target_models = [m for m in PREFERRED_MODELS if m in all_models]
+                    for m in all_models:
+                        if m not in target_models and "guard" not in m.lower() and "whisper" not in m.lower():
+                            target_models.append(m)
+
+                    for model_name in target_models:
+                        try:
+                            completion = client.chat.completions.create(
+                                model=model_name,
+                                messages=messages_payload,
+                                temperature=0.3,
+                                max_tokens=600
+                            )
+                            bot_reply = completion.choices[0].message.content
+                            if bot_reply:
+                                break
+                        except Exception as m_err:
+                            last_err = str(m_err)
+                            continue
+                    
+                    if bot_reply:
+                        break
+                except Exception as err:
+                    last_err = str(err)
+                    continue
+
+            if bot_reply:
+                with st.chat_message("assistant"):
+                    st.markdown(bot_reply)
+                st.session_state.messages.append({"role": "assistant", "content": bot_reply})
+                
+                log_chat_to_sheet(user_nik, user_nama, user_query, bot_reply)
+            else:
+                st.error(f"Gagal memproses pesan: {last_err}")
