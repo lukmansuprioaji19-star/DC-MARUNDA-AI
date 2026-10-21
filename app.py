@@ -13,16 +13,7 @@ st.set_page_config(
 
 # 2. Inject HTML untuk Branding PWA
 st.markdown(
-    """
-    <head>
-        <title>DC Marunda AI</title>
-        <meta name="apple-mobile-web-app-title" content="DC Marunda AI">
-        <meta name="application-name" content="DC Marunda AI">
-        <link rel="icon" type="image/png" href="logo.png">
-        <link rel="apple-touch-icon" href="logo.png">
-        <link rel="shortcut icon" href="logo.png">
-    </head>
-    """,
+    "<head><title>DC Marunda AI</title><meta name='apple-mobile-web-app-title' content='DC Marunda AI'><meta name='application-name' content='DC Marunda AI'><link rel='icon' type='image/png' href='logo.png'><link rel='apple-touch-icon' href='logo.png'><link rel='shortcut icon' href='logo.png'></head>",
     unsafe_allow_html=True
 )
 
@@ -95,14 +86,14 @@ def search_mid_data(sheet_id, query):
     if df_mid.empty:
         return "\n--- DATA TAB: MID kosong atau tidak ditemukan ---\n"
     
-    words = [w.strip() for w in query.lower().split() if len(w.strip()) > 1]
+    words = [w.strip() for w in query.lower().split() if len(w.strip()) > 0]
     filtered_df = pd.DataFrame()
     
     mid_col = next((c for c in df_mid.columns if "mid" in c.lower()), df_mid.columns[0])
     desc_col = next((c for c in df_mid.columns if "desc" in c.lower()), df_mid.columns[1] if len(df_mid.columns)>1 else df_mid.columns[0])
     mg2_col = next((c for c in df_mid.columns if "mg2" in c.lower() or "mg" in c.lower()), df_mid.columns[2] if len(df_mid.columns)>2 else None)
     
-    # 1. Cek apakah ada nomor MID spesifik dalam query untuk dicari MG2 samanya
+    # 1. Cek pencarian khusus MG2 berdasarkan nomor MID
     target_mg2 = None
     if mg2_col:
         for word in words:
@@ -111,27 +102,38 @@ def search_mid_data(sheet_id, query):
                 target_mg2 = exact_mid_match.iloc[0][mg2_col]
                 break
     
-    # 2. Jika ketemu MID & MG2-nya, ambil SEMUA barang yang punya MG2 sama
     if target_mg2 and mg2_col:
         filtered_df = df_mid[df_mid[mg2_col].astype(str).str.strip().str.lower() == str(target_mg2).strip().lower()]
     else:
-        # 3. Pencarian standar berdasarkan kata kunci MID/DESC/MG2
-        for word in words:
-            cond = (
-                df_mid[mid_col].astype(str).str.lower().str.contains(word, na=False) |
-                df_mid[desc_col].astype(str).str.lower().str.contains(word, na=False)
-            )
-            if mg2_col:
-                cond = cond | df_mid[mg2_col].astype(str).str.lower().str.contains(word, na=False)
+        # 2. Pencarian Fleksibel Multi-Keyword (Berdasarkan MID, DESC, MG2)
+        search_series = df_mid[mid_col].astype(str) + " " + df_mid[desc_col].astype(str)
+        if mg2_col:
+            search_series += " " + df_mid[mg2_col].astype(str)
+        search_series = search_series.str.lower()
+        
+        ignore_words = {"ada", "berapa", "varian", "yang", "ukurannya", "ukuran", "saja", "apa", "sama", "dengan", "ok", "kalau", "saya", "mau", "cari", "tanya"}
+        clean_words = [w for w in words if w not in ignore_words and len(w) > 0]
+        
+        if clean_words:
+            # Cari baris yang mengandung SEMUA kata kunci
+            condition = pd.Series(True, index=df_mid.index)
+            for word in clean_words:
+                condition = condition & search_series.str.contains(word, regex=False, na=False)
             
-            match = df_mid[cond]
-            if not match.empty:
-                filtered_df = pd.concat([filtered_df, match]).drop_duplicates()
-    
+            filtered_df = df_mid[condition]
+            
+            # Jika kosong, cari baris yang mengandung SALAH SATU kata kunci utama (panjang kata > 2)
+            if filtered_df.empty:
+                loose_condition = pd.Series(False, index=df_mid.index)
+                for word in clean_words:
+                    if len(word) > 2:
+                        loose_condition = loose_condition | search_series.str.contains(word, regex=False, na=False)
+                filtered_df = df_mid[loose_condition]
+
     if not filtered_df.empty:
-        return f"\n--- DATA TAB: MID (HASIL PENCARIAN BARANG RELEVAN) ---\n" + filtered_df.head(30).to_csv(index=False)
+        return f"\n--- DATA TAB MID (HASIL PENCARIAN RELEVAN) ---\n" + filtered_df.head(30).to_csv(index=False)
     
-    return f"\n--- DATA TAB: MID (SAMPEL 10 BARANG PERTAMA) ---\n" + df_mid.head(10).to_csv(index=False)
+    return "\n--- DATA TAB MID: TIDAK DITEMUKAN BARANG YANG COCOK DENGAN PENCARIAN INI ---\n"
 
 def get_user_insentif_data(sheet_id, user_nik):
     df_insentif = load_sheet_df(sheet_id, "INSENTIF")
@@ -167,7 +169,15 @@ def log_chat_to_sheet(nik, nama, pertanyaan, jawaban_ai):
 
 def get_context_by_category(sheet_id, query, user_nik):
     q = query.lower()
-    if any(k in q for k in ["mid", "barang", "produk", "desc", "mg2", "pcs in box", "pcs inbox", "shelf life", "expired", "ed", "75%"]):
+    
+    # DAFTAR KATA KUNCI PERTANYAAN BARANG / PRODUK
+    mid_keywords = [
+        "mid", "barang", "produk", "desc", "mg2", "pcs in box", "pcs inbox", 
+        "shelf life", "expired", "ed", "75%", "mie", "cup", "zink", "shampoo", 
+        "sabun", "ciptadent", "kodomo", "mama", "emeron", "pouch", "btl", "sct"
+    ]
+    
+    if any(k in q for k in mid_keywords):
         return search_mid_data(sheet_id, query)
     elif any(k in q for k in ["insentif", "poin", "point", "kata kunci"]):
         return get_user_insentif_data(sheet_id, user_nik)
@@ -178,6 +188,11 @@ def get_context_by_category(sheet_id, query, user_nik):
     elif any(k in q for k in ["tcode", "t-code", "code", "sap", "spkb", "wavepick", "running"]):
         return load_sheet_tab(sheet_id, "T-CODE")
     else:
+        # Jika bukan pertanyaan spesifik operasional lain, cek dulu di tab MID kalau-kalau itu nama barang baru
+        mid_check = search_mid_data(sheet_id, query)
+        if "TIDAK DITEMUKAN BARANG" not in mid_check:
+            return mid_check
+            
         res = load_sheet_tab(sheet_id, "IDENTITAS")
         if not res:
             res = load_sheet_tab(sheet_id, "INDENTITAS")
@@ -202,17 +217,7 @@ else:
 # 7. Inisialisasi Riwayat Chat
 if "messages" not in st.session_state:
     st.session_state.messages = []
-    welcome_text = (
-        "👋 **Selamat Datang di DC Marunda AI!**\n\n"
-        "Silakan tanyakan informasi operasional yang Anda butuhkan:\n"
-        "- **Cek Barang & MID**: *\"Ciptadent 10014 berapa pcs sebox?\"* atau *\"MID 10524 shelf life berapa hari?\"*\n"
-        "- **Identitas & Jadwal Kerja**: *\"Siapa saja yang masuk jam 6 pagi?\"* atau *\"Anwar jam berapa masuk?\"*\n"
-        "- **Cek Insentif**: *\"Sodikin Belut Bingung\"* (Memerlukan Kata Kunci)\n"
-        "- **T-Code SAP**: *\"T-Code running SPKB\"*\n"
-        "- **KPI & Pencapaian**: *\"Cek KPI\"* atau *\"Pencapaian lead time\"*\n\n"
-        "💬 **Mau Curhat atau Obrolan Santai?**\n"
-        "Mau curhat, tanya rumus Excel, atau sekadar obrolan santai di luar pekerjaan juga boleh banget lho! Bebas tanya apa saja! 😊"
-    )
+    welcome_text = "👋 **Selamat Datang di DC Marunda AI!**\n\nSilakan tanyakan informasi operasional yang Anda butuhkan:\n- **Cek Barang & MID**: *\"Ciptadent 10014 berapa pcs sebox?\"* atau *\"Mama Lime 1.5 kg ada berapa varian?\"*\n- **Identitas & Jadwal Kerja**: *\"Siapa saja yang masuk jam 6 pagi?\"* atau *\"Anwar jam berapa masuk?\"*\n- **Cek Insentif**: *\"Sodikin Belut Bingung\"* (Memerlukan Kata Kunci)\n- **T-Code SAP**: *\"T-Code running SPKB\"*\n- **KPI & Pencapaian**: *\"Cek KPI\"* atau *\"Pencapaian lead time\"*\n\n💬 **Mau Curhat atau Obrolan Santai?**\nMau curhat, tanya rumus Excel, atau sekadar obrolan santai di luar pekerjaan juga boleh banget lho! Bebas tanya apa saja! 😊"
     st.session_state.messages.append({"role": "assistant", "content": welcome_text})
 
 for message in st.session_state.messages:
@@ -236,38 +241,44 @@ if user_query and is_valid_user:
 
         context_data = get_context_by_category(SHEET_ID, user_query, user_nik)
 
+        # PROMPT UTAMA ALAMI & ANTI-PIKUN
         system_prompt = (
-            f"Kamu adalah asisten AI pintar untuk operasional DC Marunda.\n"
-            f"Pengguna yang sedang bertanya bernama: {user_nama} (NIK: {user_nik}).\n\n"
-            f"GAYA BAHASA & KELUESAN BERBICARA:\n"
-            f"1. ADAPTIF & FLEKSIBEL: Ikuti gaya bahasa pengguna. Jika pengguna bertanya/curhat dengan bahasa gaul/santai, jawablah dengan bahasa gaul/santai yang akrab, ramah, dan empatik. Jika pengguna bertanya dengan bahasa selain Indonesia (Jawa, Sunda, Inggris, dll), jawablah dengan bahasa yang sama atau bahasa yang diminta.\n"
-            f"2. CERDAS, OPEN & BERPIKIR LUAS: Pengguna BISA dan BOLEH bertanya atau curhat mengenai hal apa saja di luar pekerjaan (misalnya: curhat masalah harian, rumus Excel, tips hidup, obrolan santai, humor, dll). Jawablah secara bijak, empati, cerdas, dan menyenangkan!\n"
-            f"3. ANTI-HALUSINASI: DILARANG KERAS mengarang/menciptakan link website, email, atau nomor telepon palsu.\n\n"
-            f"ATURAN PENGGUNAAN DATA TABEL OPERASIONAL:\n"
-            f"1. TABEL MID (INFORMASI BARANG): Jika pengguna bertanya seputar MID, deskripsi barang (DESC), MG2, PCS INBOX, Shelf Life (Days), atau 75% Terima MT, gunakan data dari tab MID. Bantu jelaskan detail barangnya secara ramah & presisi.\n"
-            f"2. KEAMANAN INSENTIF: DILARANG KERAS membocorkan isi kolom 'Kata kunci'. Tampilkan data nominal/poin insentif HANYA JIKA kata kunci yang dimasukkan cocok dengan kata kunci NIK {user_nik}.\n\n"
-            f"[DATA TABEL OPERASIONAL DC MARUNDA]:\n{context_data}"
+            "Kamu adalah DC Marunda AI, asisten operasional resmi DC Marunda.\n"
+            + "Lawan bicaramu bernama: " + str(user_nama) + " (NIK: " + str(user_nik) + ").\n\n"
+            + "INSTRUKSI UTAMA & GAYA BAHASA:\n"
+            + "1. JANGAN PERNAH MENYAPA BERULANG: DILARANG KERAS mengucapkan 'Salam kenal', 'Halo', atau memperkenalkan diri lagi di setiap balasan! Percakapan ini sedang berlangsung.\n"
+            + "2. LANGSUNG KE JAWABAN: Jawablah pertanyaan pengguna secara presisi, ramah, dan akrab.\n"
+            + "3. PENCARIAN BARANG/MID: Gunakan data resmi dari [DATA TABEL OPERASIONAL DC MARUNDA]. Jika barang tidak ada di data, sebutkan secara jujur bahwa barang tidak ditemukan di database. DILARANG KERAS mengarang barang/tabel palsu.\n"
+            + "4. OBROLAN / CURHAT: Jika pertanyaan bersifat umum/curhat di luar pekerjaan, jawablah secara bijak, cerdas, empati, dan luwes!\n"
+            + "5. KEAMANAN INSENTIF: DILARANG membocorkan isi kolom 'Kata kunci'. Tampilkan data insentif HANYA JIKA kata kunci cocok.\n\n"
+            + "[DATA TABEL OPERASIONAL DC MARUNDA]:\n" + str(context_data)
         )
 
         with st.spinner("Mencari data..."):
             bot_reply = None
             last_err = "Gagal memproses pesan."
 
-            messages_payload = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_query}
+            # MASUKKAN 6 CHAT TERAKHIR AGAR AI INGAT RIWAYAT OBROLAN (TIDAK PIKUN)
+            messages_payload = [{"role": "system", "content": system_prompt}]
+            for msg in st.session_state.messages[-6:]:
+                messages_payload.append({"role": msg["role"], "content": msg["content"]})
+
+            PREFERRED_MODELS = [
+                "llama-3.3-70b-versatile",
+                "llama-3.1-8b-instant"
             ]
 
             for api_key in ACTIVE_KEYS:
                 try:
                     client = Groq(api_key=api_key)
-                    all_models = client.models.list().data
-                    available_text_models = [
-                        m.id for m in all_models 
-                        if "guard" not in m.id.lower() and "whisper" not in m.id.lower()
-                    ]
+                    all_models = [m.id for m in client.models.list().data]
+                    
+                    target_models = [m for m in PREFERRED_MODELS if m in all_models]
+                    for m in all_models:
+                        if m not in target_models and "guard" not in m.lower() and "whisper" not in m.lower():
+                            target_models.append(m)
 
-                    for model_name in available_text_models:
+                    for model_name in target_models:
                         try:
                             completion = client.chat.completions.create(
                                 model=model_name,
