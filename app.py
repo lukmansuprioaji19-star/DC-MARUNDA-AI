@@ -93,7 +93,7 @@ def search_mid_data(sheet_id, query):
     desc_col = next((c for c in df_mid.columns if "desc" in c.lower()), df_mid.columns[1] if len(df_mid.columns)>1 else df_mid.columns[0])
     mg2_col = next((c for c in df_mid.columns if "mg2" in c.lower() or "mg" in c.lower()), df_mid.columns[2] if len(df_mid.columns)>2 else None)
     
-    # 1. Cek pencarian MG2 berdasarkan nomor MID dalam query
+    # 1. Cek pencarian MG2 berdasarkan nomor MID
     target_mg2 = None
     if mg2_col:
         for word in words:
@@ -105,33 +105,35 @@ def search_mid_data(sheet_id, query):
     if target_mg2 and mg2_col:
         filtered_df = df_mid[df_mid[mg2_col].astype(str).str.strip().str.lower() == str(target_mg2).strip().lower()]
     else:
-        # 2. Pencarian Multi-Keyword fleksibel
+        # 2. Pencarian Fleksibel Multi-Keyword
         search_series = df_mid[mid_col].astype(str) + " " + df_mid[desc_col].astype(str)
         if mg2_col:
             search_series += " " + df_mid[mg2_col].astype(str)
         search_series = search_series.str.lower()
         
-        ignore_words = {"ada", "berapa", "varian", "yang", "ukurannya", "ukuran", "saja", "apa", "sama", "dengan", "ok", "kalau", "saya", "mau", "cari"}
+        ignore_words = {"ok", "kalau", "saya", "mau", "tanya", "cari", "ada", "apa", "aja", "berapa", "yang"}
         clean_words = [w for w in words if w not in ignore_words and len(w) > 0]
         
         if clean_words:
+            # Cari baris yang mengandung SEMUA kata kunci
             condition = pd.Series(True, index=df_mid.index)
             for word in clean_words:
                 condition = condition & search_series.str.contains(word, regex=False, na=False)
             
             filtered_df = df_mid[condition]
             
+            # Jika kosong, cari yang mengandung SALAH SATU kata kunci penting (panjang kata > 2)
             if filtered_df.empty:
                 loose_condition = pd.Series(False, index=df_mid.index)
                 for word in clean_words:
-                    if len(word) > 1:
+                    if len(word) > 2:
                         loose_condition = loose_condition | search_series.str.contains(word, regex=False, na=False)
                 filtered_df = df_mid[loose_condition]
 
     if not filtered_df.empty:
-        return f"\n--- DATA TAB: MID (HASIL PENCARIAN BARANG RELEVAN) ---\n" + filtered_df.head(25).to_csv(index=False)
+        return f"\n--- DATA TAB MID (DITEMUKAN {len(filtered_df)} HASIL RELEVAN) ---\n" + filtered_df.head(30).to_csv(index=False)
     
-    return f"\n--- DATA TAB: MID (SAMPEL 10 BARANG PERTAMA) ---\n" + df_mid.head(10).to_csv(index=False)
+    return "\n--- DATA TAB MID: TIDAK DITEMUKAN BARANG YANG COCOK DENGAN PENCARIAN INI ---\n"
 
 def get_user_insentif_data(sheet_id, user_nik):
     df_insentif = load_sheet_df(sheet_id, "INSENTIF")
@@ -167,7 +169,7 @@ def log_chat_to_sheet(nik, nama, pertanyaan, jawaban_ai):
 
 def get_context_by_category(sheet_id, query, user_nik):
     q = query.lower()
-    if any(k in q for k in ["mid", "barang", "produk", "desc", "mg2", "pcs in box", "pcs inbox", "shelf life", "expired", "ed", "75%", "zink", "shampoo", "sabun"]):
+    if any(k in q for k in ["mid", "barang", "produk", "desc", "mg2", "pcs in box", "pcs inbox", "shelf life", "expired", "ed", "75%", "mie", "cup", "zink", "shampoo", "sabun"]):
         return search_mid_data(sheet_id, query)
     elif any(k in q for k in ["insentif", "poin", "point", "kata kunci"]):
         return get_user_insentif_data(sheet_id, user_nik)
@@ -226,15 +228,15 @@ if user_query and is_valid_user:
 
         context_data = get_context_by_category(SHEET_ID, user_query, user_nik)
 
-        # SYSTEM PROMPT ALAMI TANPA KALIMAT SAPAAN BERULANG
+        # INTRUKSI ANTI-HALUSINASI SANGAT KETAT
         system_prompt = (
             "Kamu adalah DC Marunda AI, asisten operasional resmi DC Marunda.\n"
             + "Lawan bicaramu bernama: " + str(user_nama) + " (NIK: " + str(user_nik) + ").\n\n"
-            + "GAYA BAHASA & INSTRUKSI UTAMA:\n"
-            + "1. LANGSUNG KE JAWABAN: DILARANG KERAS mengucapkan 'Salam kenal', 'Halo', atau memperkenalkan diri lagi di setiap balasan, karena percakapan sudah berlangsung.\n"
-            + "2. FLEKSIBEL & RAMAH: Ikuti bahasa pengguna. Jika pengguna santai, jawab dengan santai dan akrab.\n"
-            + "3. CERDAS: Jawab pertanyaan operasional dari data tabel secara akurat, atau tanggapi curhatan/pertanyaan umum secara bijak.\n"
-            + "4. ANTI-HALUSINASI: DILARANG mengarang link, email, atau nomor telepon palsu.\n\n"
+            + "ATURAN STRICT (ANTI-HALUSINASI BARANG):\n"
+            + "1. HANYA GUNAKAN DATA TERLAMPIR: Untuk pertanyaan seputar barang/produk/MID, JAWAB HANYA BERDASARKAN DATA DARI [DATA TABEL OPERASIONAL DC MARUNDA].\n"
+            + "2. DILARANG MENGARANG/NGELINDUR: Jika di dalam tabel tertulis 'TIDAK DITEMUKAN BARANG YANG COCOK', sebutkan secara jujur dan ramah bahwa barang tersebut tidak ditemukan dalam database DC Marunda. DILARANG KERAS mengarang varian generik, membuat tabel buatan sendiri, atau menyebutkan barang yang tidak ada di data terlampir!\n"
+            + "3. LANGSUNG KE POKOK JAWABAN: DILARANG mengucapkan 'Salam kenal' atau menyapa berulang-ulang.\n"
+            + "4. KEAMANAN INSENTIF: DILARANG membocorkan isi kolom Kata kunci. Tampilkan data insentif HANYA JIKA kata kunci cocok.\n\n"
             + "[DATA TABEL OPERASIONAL DC MARUNDA]:\n" + str(context_data)
         )
 
@@ -242,9 +244,8 @@ if user_query and is_valid_user:
             bot_reply = None
             last_err = "Gagal memproses pesan."
 
-            # SERTAKAN SELURUH RIWAYAT CHAT SEBELUMNYA AGAR AI INGAT KONTEKS
             messages_payload = [{"role": "system", "content": system_prompt}]
-            for msg in st.session_state.messages[-6:]:  # Mengambil 6 percakapan terakhir
+            for msg in st.session_state.messages[-6:]:
                 messages_payload.append({"role": msg["role"], "content": msg["content"]})
 
             PREFERRED_MODELS = [
@@ -267,7 +268,7 @@ if user_query and is_valid_user:
                             completion = client.chat.completions.create(
                                 model=model_name,
                                 messages=messages_payload,
-                                temperature=0.3,
+                                temperature=0.1,
                                 max_tokens=600
                             )
                             bot_reply = completion.choices[0].message.content
