@@ -81,6 +81,59 @@ def validate_and_get_user(sheet_id, nik_input):
                 
     return False, None
 
+def search_identitas_data(sheet_id, query):
+    df = load_sheet_df(sheet_id, "IDENTITAS")
+    if df.empty:
+        df = load_sheet_df(sheet_id, "INDENTITAS")
+    if df.empty:
+        return "\n--- DATA TAB IDENTITAS TIDAK TERSEDIA ---\n"
+    
+    words = [w.strip() for w in query.lower().split() if len(w.strip()) > 0]
+    ignore_words = {"siapa", "saja", "yang", "masuk", "jam", "pukul", "hari", "ini", "besok", "di", "mana", "berapa", "tolong", "cek", "ada", "apa"}
+    clean_words = [w for w in words if w not in ignore_words]
+    
+    # Gabungkan semua kolom jadi satu baris pencarian
+    search_series = df.astype(str).agg(" ".join, axis=1).str.lower()
+    
+    # 1. Cek pencarian khusus jam (contoh: 'jam 6' -> '6:00', '13:00', '16:00')
+    time_query = None
+    for w in words:
+        if ":" in w:
+            time_query = w
+            break
+        elif w.isdigit() and len(w) <= 2:
+            time_query = f"{w}:00"
+            break
+
+    filtered_df = pd.DataFrame()
+    if time_query:
+        # Cari di kolom jadwal masuk
+        jadwal_cols = [c for c in df.columns if "jadwal" in c.lower() or "masuk" in c.lower()]
+        if jadwal_cols:
+            cond = pd.Series(False, index=df.index)
+            for jc in jadwal_cols:
+                cond = cond | df[jc].astype(str).str.contains(time_query, regex=False, na=False)
+            filtered_df = df[cond]
+
+    # 2. Jika bukan tanya jam atau pencarian jam kosong, cari per kata kunci nama/job/alamat
+    if filtered_df.empty and clean_words:
+        cond = pd.Series(False, index=df.index)
+        for w in clean_words:
+            if len(w) > 1:
+                cond = cond | search_series.str.contains(w, regex=False, na=False)
+        filtered_df = df[cond]
+
+    # 3. Kembalikan data relevan (batasi maksimal 25 baris agar token aman)
+    if not filtered_df.empty:
+        return f"\n--- DATA IDENTITAS & JADWAL KARYAWAN (DITEMUKAN {len(filtered_df)} ORANG RELEVAN) ---\n" + filtered_df.head(25).to_csv(index=False)
+    
+    # Jika tidak ada filter yang cocok, kirim ringkasan jadwal & nama saja (kolom utama)
+    main_cols = [c for c in df.columns if any(k in c.lower() for k in ["nik", "nama", "job", "jadwal", "masuk"])]
+    if main_cols:
+        return f"\n--- DATA TABEL IDENTITAS (RINGKASAN JADWAL) ---\n" + df[main_cols].head(25).to_csv(index=False)
+    
+    return f"\n--- DATA TABEL IDENTITAS ---\n" + df.head(15).to_csv(index=False)
+
 def search_mid_data(sheet_id, query):
     df_mid = load_sheet_df(sheet_id, "MID")
     if df_mid.empty:
@@ -93,7 +146,6 @@ def search_mid_data(sheet_id, query):
     desc_col = next((c for c in df_mid.columns if "desc" in c.lower()), df_mid.columns[1] if len(df_mid.columns)>1 else df_mid.columns[0])
     mg2_col = next((c for c in df_mid.columns if "mg2" in c.lower() or "mg" in c.lower()), df_mid.columns[2] if len(df_mid.columns)>2 else None)
     
-    # 1. Cek pencarian khusus MG2 berdasarkan nomor MID
     target_mg2 = None
     if mg2_col:
         for word in words:
@@ -105,7 +157,6 @@ def search_mid_data(sheet_id, query):
     if target_mg2 and mg2_col:
         filtered_df = df_mid[df_mid[mg2_col].astype(str).str.strip().str.lower() == str(target_mg2).strip().lower()]
     else:
-        # 2. Pencarian Fleksibel Multi-Keyword (Berdasarkan MID, DESC, MG2)
         search_series = df_mid[mid_col].astype(str) + " " + df_mid[desc_col].astype(str)
         if mg2_col:
             search_series += " " + df_mid[mg2_col].astype(str)
@@ -115,14 +166,12 @@ def search_mid_data(sheet_id, query):
         clean_words = [w for w in words if w not in ignore_words and len(w) > 0]
         
         if clean_words:
-            # Cari baris yang mengandung SEMUA kata kunci
             condition = pd.Series(True, index=df_mid.index)
             for word in clean_words:
                 condition = condition & search_series.str.contains(word, regex=False, na=False)
             
             filtered_df = df_mid[condition]
             
-            # Jika kosong, cari baris yang mengandung SALAH SATU kata kunci utama (panjang kata > 2)
             if filtered_df.empty:
                 loose_condition = pd.Series(False, index=df_mid.index)
                 for word in clean_words:
@@ -170,33 +219,47 @@ def log_chat_to_sheet(nik, nama, pertanyaan, jawaban_ai):
 def get_context_by_category(sheet_id, query, user_nik):
     q = query.lower()
     
-    # DAFTAR KATA KUNCI PERTANYAAN BARANG / PRODUK
+    # 1. Kategori Jadwal Kerja & Identitas Karyawan
+    identitas_keywords = [
+        "jadwal", "shift", "masuk jam", "jam berapa", "libur", "inbound", "outbound", 
+        "checker", "leader", "spv", "kepala gudang", "no hp", "nomor hp", "nomor telepon", 
+        "alamat", "email", "tanggal lahir", "tempat lahir", "tanggal masuk", "karyawan", "zone"
+    ]
+    if any(k in q for k in identitas_keywords):
+        return search_identitas_data(sheet_id, query)
+
+    # 2. Kategori Barang / MID
     mid_keywords = [
         "mid", "barang", "produk", "desc", "mg2", "pcs in box", "pcs inbox", 
         "shelf life", "expired", "ed", "75%", "mie", "cup", "zink", "shampoo", 
         "sabun", "ciptadent", "kodomo", "mama", "emeron", "pouch", "btl", "sct"
     ]
-    
     if any(k in q for k in mid_keywords):
         return search_mid_data(sheet_id, query)
+        
+    # 3. Kategori Insentif
     elif any(k in q for k in ["insentif", "poin", "point", "kata kunci"]):
         return get_user_insentif_data(sheet_id, user_nik)
+        
+    # 4. Kategori KPI & Pencapaian
     elif any(k in q for k in ["kpi", "whu", "ofr"]):
         return load_sheet_tab(sheet_id, "KPI")
     elif any(k in q for k in ["pencapaian", "box", "pcs", "lead time"]):
         return load_sheet_tab(sheet_id, "PENCAPAIAN")
     elif any(k in q for k in ["tcode", "t-code", "code", "sap", "spkb", "wavepick", "running"]):
         return load_sheet_tab(sheet_id, "T-CODE")
+        
+    # 5. Default pencarian cerdas ke IDENTITAS atau MID
     else:
-        # Jika bukan pertanyaan spesifik operasional lain, cek dulu di tab MID kalau-kalau itu nama barang baru
-        mid_check = search_mid_data(sheet_id, query)
-        if "TIDAK DITEMUKAN BARANG" not in mid_check:
-            return mid_check
+        ident_res = search_identitas_data(sheet_id, query)
+        if "DITEMUKAN" in ident_res:
+            return ident_res
+        
+        mid_res = search_mid_data(sheet_id, query)
+        if "TIDAK DITEMUKAN BARANG" not in mid_res:
+            return mid_res
             
-        res = load_sheet_tab(sheet_id, "IDENTITAS")
-        if not res:
-            res = load_sheet_tab(sheet_id, "INDENTITAS")
-        return res
+        return ident_res
 
 # 6. Sidebar Input NIK & Validasi Ketat
 st.sidebar.header("🔐 Access Control")
@@ -217,7 +280,7 @@ else:
 # 7. Inisialisasi Riwayat Chat
 if "messages" not in st.session_state:
     st.session_state.messages = []
-    welcome_text = "👋 **Selamat Datang di DC Marunda AI!**\n\nSilakan tanyakan informasi operasional yang Anda butuhkan:\n- **Cek Barang & MID**: *\"Ciptadent 10014 berapa pcs sebox?\"* atau *\"Mama Lime 1.5 kg ada berapa varian?\"*\n- **Identitas & Jadwal Kerja**: *\"Siapa saja yang masuk jam 6 pagi?\"* atau *\"Anwar jam berapa masuk?\"*\n- **Cek Insentif**: *\"Sodikin Belut Bingung\"* (Memerlukan Kata Kunci)\n- **T-Code SAP**: *\"T-Code running SPKB\"*\n- **KPI & Pencapaian**: *\"Cek KPI\"* atau *\"Pencapaian lead time\"*\n\n💬 **Mau Curhat atau Obrolan Santai?**\nMau curhat, tanya rumus Excel, atau sekadar obrolan santai di luar pekerjaan juga boleh banget lho! Bebas tanya apa saja! 😊"
+    welcome_text = "👋 **Selamat Datang di DC Marunda AI!**\n\nSilakan tanyakan informasi operasional yang Anda butuhkan:\n- **Identitas & Jadwal Kerja**: *\"Siapa saja yang masuk jam 6 pagi?\"*, *\"Anwar checker apa?\"*, atau *\"Alamat Fahmi di mana?\"*\n- **Cek Barang & MID**: *\"Ciptadent 10014 berapa pcs sebox?\"* atau *\"Mama Lime 1.5 kg ada berapa varian?\"*\n- **Cek Insentif**: *\"Sodikin Belut Bingung\"* (Memerlukan Kata Kunci)\n- **T-Code SAP**: *\"T-Code running SPKB\"*\n- **KPI & Pencapaian**: *\"Cek KPI\"* atau *\"Pencapaian lead time\"*\n\n💬 **Mau Curhat atau Obrolan Santai?**\nMau curhat, tanya rumus Excel, atau sekadar obrolan santai di luar pekerjaan juga boleh banget lho! Bebas tanya apa saja! 😊"
     st.session_state.messages.append({"role": "assistant", "content": welcome_text})
 
 for message in st.session_state.messages:
@@ -241,16 +304,16 @@ if user_query and is_valid_user:
 
         context_data = get_context_by_category(SHEET_ID, user_query, user_nik)
 
-        # PROMPT UTAMA ALAMI & ANTI-PIKUN
         system_prompt = (
             "Kamu adalah DC Marunda AI, asisten operasional resmi DC Marunda.\n"
             + "Lawan bicaramu bernama: " + str(user_nama) + " (NIK: " + str(user_nik) + ").\n\n"
             + "INSTRUKSI UTAMA & GAYA BAHASA:\n"
             + "1. JANGAN PERNAH MENYAPA BERULANG: DILARANG KERAS mengucapkan 'Salam kenal', 'Halo', atau memperkenalkan diri lagi di setiap balasan! Percakapan ini sedang berlangsung.\n"
             + "2. LANGSUNG KE JAWABAN: Jawablah pertanyaan pengguna secara presisi, ramah, dan akrab.\n"
-            + "3. PENCARIAN BARANG/MID: Gunakan data resmi dari [DATA TABEL OPERASIONAL DC MARUNDA]. Jika barang tidak ada di data, sebutkan secara jujur bahwa barang tidak ditemukan di database. DILARANG KERAS mengarang barang/tabel palsu.\n"
-            + "4. OBROLAN / CURHAT: Jika pertanyaan bersifat umum/curhat di luar pekerjaan, jawablah secara bijak, cerdas, empati, dan luwes!\n"
-            + "5. KEAMANAN INSENTIF: DILARANG membocorkan isi kolom 'Kata kunci'. Tampilkan data insentif HANYA JIKA kata kunci cocok.\n\n"
+            + "3. INFORMASI KARYAWAN & JADWAL: Gunakan data resmi dari [DATA TABEL OPERASIONAL DC MARUNDA]. Kamu bisa menjawab pertanyaan terkait NIK, Nama, Posisi/Job, Jadwal masuk per tanggal, Alamat, No HP, Email, dan Tanggal Lahir.\n"
+            + "4. PENCARIAN BARANG/MID: Jika barang tidak ada di database, katakan secara jujur bahwa barang tidak ditemukan. DILARANG KERAS mengarang barang/tabel palsu.\n"
+            + "5. OBROLAN / CURHAT: Jika pertanyaan bersifat umum/curhat di luar pekerjaan, jawablah secara bijak, cerdas, empati, dan luwes!\n"
+            + "6. KEAMANAN INSENTIF: DILARANG membocorkan isi kolom 'Kata kunci'. Tampilkan data insentif HANYA JIKA kata kunci cocok.\n\n"
             + "[DATA TABEL OPERASIONAL DC MARUNDA]:\n" + str(context_data)
         )
 
@@ -258,7 +321,6 @@ if user_query and is_valid_user:
             bot_reply = None
             last_err = "Gagal memproses pesan."
 
-            # MASUKKAN 6 CHAT TERAKHIR AGAR AI INGAT RIWAYAT OBROLAN (TIDAK PIKUN)
             messages_payload = [{"role": "system", "content": system_prompt}]
             for msg in st.session_state.messages[-6:]:
                 messages_payload.append({"role": msg["role"], "content": msg["content"]})
