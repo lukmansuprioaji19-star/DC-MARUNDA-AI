@@ -92,10 +92,10 @@ def search_identitas_data(sheet_id, query):
     ignore_words = {"siapa", "saja", "yang", "masuk", "jam", "pukul", "hari", "ini", "besok", "di", "mana", "berapa", "tolong", "cek", "ada", "apa"}
     clean_words = [w for w in words if w not in ignore_words]
     
-    # Gabungkan semua kolom jadi satu baris pencarian
-    search_series = df.astype(str).agg(" ".join, axis=1).str.lower()
+    # Penggabungan string tanpa .agg() untuk menghindari TypeError pada nilai null
+    search_series = df.fillna("").astype(str).apply(lambda row: " ".join(row.values), axis=1).str.lower()
     
-    # 1. Cek pencarian khusus jam (contoh: 'jam 6' -> '6:00', '13:00', '16:00')
+    # 1. Cek pencarian khusus jam
     time_query = None
     for w in words:
         if ":" in w:
@@ -107,7 +107,6 @@ def search_identitas_data(sheet_id, query):
 
     filtered_df = pd.DataFrame()
     if time_query:
-        # Cari di kolom jadwal masuk
         jadwal_cols = [c for c in df.columns if "jadwal" in c.lower() or "masuk" in c.lower()]
         if jadwal_cols:
             cond = pd.Series(False, index=df.index)
@@ -115,7 +114,7 @@ def search_identitas_data(sheet_id, query):
                 cond = cond | df[jc].astype(str).str.contains(time_query, regex=False, na=False)
             filtered_df = df[cond]
 
-    # 2. Jika bukan tanya jam atau pencarian jam kosong, cari per kata kunci nama/job/alamat
+    # 2. Jika bukan tanya jam atau pencarian jam kosong, cari per kata kunci
     if filtered_df.empty and clean_words:
         cond = pd.Series(False, index=df.index)
         for w in clean_words:
@@ -123,11 +122,10 @@ def search_identitas_data(sheet_id, query):
                 cond = cond | search_series.str.contains(w, regex=False, na=False)
         filtered_df = df[cond]
 
-    # 3. Kembalikan data relevan (batasi maksimal 25 baris agar token aman)
+    # 3. Kembalikan data relevan
     if not filtered_df.empty:
         return f"\n--- DATA IDENTITAS & JADWAL KARYAWAN (DITEMUKAN {len(filtered_df)} ORANG RELEVAN) ---\n" + filtered_df.head(25).to_csv(index=False)
     
-    # Jika tidak ada filter yang cocok, kirim ringkasan jadwal & nama saja (kolom utama)
     main_cols = [c for c in df.columns if any(k in c.lower() for k in ["nik", "nama", "job", "jadwal", "masuk"])]
     if main_cols:
         return f"\n--- DATA TABEL IDENTITAS (RINGKASAN JADWAL) ---\n" + df[main_cols].head(25).to_csv(index=False)
@@ -219,7 +217,6 @@ def log_chat_to_sheet(nik, nama, pertanyaan, jawaban_ai):
 def get_context_by_category(sheet_id, query, user_nik):
     q = query.lower()
     
-    # 1. Kategori Jadwal Kerja & Identitas Karyawan
     identitas_keywords = [
         "jadwal", "shift", "masuk jam", "jam berapa", "libur", "inbound", "outbound", 
         "checker", "leader", "spv", "kepala gudang", "no hp", "nomor hp", "nomor telepon", 
@@ -228,7 +225,6 @@ def get_context_by_category(sheet_id, query, user_nik):
     if any(k in q for k in identitas_keywords):
         return search_identitas_data(sheet_id, query)
 
-    # 2. Kategori Barang / MID
     mid_keywords = [
         "mid", "barang", "produk", "desc", "mg2", "pcs in box", "pcs inbox", 
         "shelf life", "expired", "ed", "75%", "mie", "cup", "zink", "shampoo", 
@@ -237,11 +233,9 @@ def get_context_by_category(sheet_id, query, user_nik):
     if any(k in q for k in mid_keywords):
         return search_mid_data(sheet_id, query)
         
-    # 3. Kategori Insentif
     elif any(k in q for k in ["insentif", "poin", "point", "kata kunci"]):
         return get_user_insentif_data(sheet_id, user_nik)
         
-    # 4. Kategori KPI & Pencapaian
     elif any(k in q for k in ["kpi", "whu", "ofr"]):
         return load_sheet_tab(sheet_id, "KPI")
     elif any(k in q for k in ["pencapaian", "box", "pcs", "lead time"]):
@@ -249,7 +243,6 @@ def get_context_by_category(sheet_id, query, user_nik):
     elif any(k in q for k in ["tcode", "t-code", "code", "sap", "spkb", "wavepick", "running"]):
         return load_sheet_tab(sheet_id, "T-CODE")
         
-    # 5. Default pencarian cerdas ke IDENTITAS atau MID
     else:
         ident_res = search_identitas_data(sheet_id, query)
         if "DITEMUKAN" in ident_res:
